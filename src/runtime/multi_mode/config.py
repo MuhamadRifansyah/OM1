@@ -375,7 +375,9 @@ def load_mode_config(
     for mode_name, mode_data in raw_config.get("modes", {}).items():
         # Validate mode structure
         if not isinstance(mode_data, dict):
-            raise ValueError(f"Configuration for mode '{mode_name}' must be a dictionary.")
+            raise ValueError(
+                f"Configuration for mode '{mode_name}' must be a dictionary."
+            )
 
         if "system_prompt_base" not in mode_data:
             raise ValueError(
@@ -417,9 +419,9 @@ def load_mode_config(
             )
             mode_system_config.transition_rules.append(rule)
         except KeyError as e:
-            raise ValueError(f"Transition rule #{i+1} missing required field: {e}")
+            raise ValueError(f"Transition rule #{i + 1} missing required field: {e}")
         except ValueError as e:
-            raise ValueError(f"Transition rule #{i+1} invalid: {e}")
+            raise ValueError(f"Transition rule #{i + 1} invalid: {e}")
 
     return mode_system_config
 
