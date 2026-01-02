@@ -1,5 +1,6 @@
 """Generate OM1 configuration schema from codebase."""
 
+import argparse
 import ast
 import json
 import logging
@@ -8,6 +9,7 @@ import sys
 from typing import Any, Dict, List
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 
 class ConfigSchemaGenerator:
@@ -53,7 +55,7 @@ class ConfigSchemaGenerator:
         hooks = self.scan_hooks()
         transition_rules = self.scan_transition_rules()
 
-        logging.info(
+        logger.info(
             f"Extracted from {len(inputs)} inputs, {len(llms)} LLMs, {len(backgrounds)} backgrounds, {len(actions)} actions, {len(hooks.get('available_functions', []))} hook modules, {len(transition_rules.get('transition_types', []))} transition types"
         )
 
@@ -115,7 +117,7 @@ class ConfigSchemaGenerator:
                         }
                     )
             except Exception as e:
-                logging.error(f"Error parsing {filepath}: {e}")
+                logger.error(f"Error parsing {filepath}: {e}")
         return results
 
     # LLM
@@ -164,7 +166,7 @@ class ConfigSchemaGenerator:
                         }
                     )
             except Exception as e:
-                logging.error(f"Error parsing {filepath}: {e}")
+                logger.error(f"Error parsing {filepath}: {e}")
         return results
 
     # Background
@@ -210,7 +212,7 @@ class ConfigSchemaGenerator:
                         }
                     )
             except Exception as e:
-                logging.error(f"Error parsing {filepath}: {e}")
+                logger.error(f"Error parsing {filepath}: {e}")
         return results
 
     # Action
@@ -274,7 +276,7 @@ class ConfigSchemaGenerator:
                             }
                         )
                 except Exception as e:
-                    logging.error(f"Error parsing {filepath}: {e}")
+                    logger.error(f"Error parsing {filepath}: {e}")
         return results
 
     # Hooks
@@ -302,7 +304,7 @@ class ConfigSchemaGenerator:
         """
 
         if not os.path.exists(self.schema_path):
-            logging.warning(f"Schema file not found: {self.schema_path}")
+            logger.warning(f"Schema file not found: {self.schema_path}")
             return {}
 
         try:
@@ -316,7 +318,7 @@ class ConfigSchemaGenerator:
                 return hooks_schema.get("items", {}).get("properties", {})
             return {}
         except Exception as e:
-            logging.error(f"Error parsing schema file: {e}")
+            logger.error(f"Error parsing schema file: {e}")
             return {}
 
     def _scan_hook_functions(self) -> List[Dict[str, Any]]:
@@ -345,7 +347,7 @@ class ConfigSchemaGenerator:
                 if functions:
                     results.append({"module_name": module_name, "functions": functions})
             except Exception as e:
-                logging.error(f"Error parsing {filepath}: {e}")
+                logger.error(f"Error parsing {filepath}: {e}")
         return results
 
     # Transition Rules
@@ -359,7 +361,7 @@ class ConfigSchemaGenerator:
         """
 
         if not os.path.exists(self.schema_path):
-            logging.warning(f"Schema file not found: {self.schema_path}")
+            logger.warning(f"Schema file not found: {self.schema_path}")
             return {}
 
         try:
@@ -384,7 +386,7 @@ class ConfigSchemaGenerator:
                 "properties": properties,
             }
         except Exception as e:
-            logging.error(f"Error parsing transition_rules schema: {e}")
+            logger.error(f"Error parsing transition_rules schema: {e}")
             return {}
 
     def _py_files(self, directory: str) -> List[str]:
@@ -476,7 +478,7 @@ class ConfigSchemaGenerator:
                 if isinstance(node, ast.ClassDef) and node.name == class_name:
                     return self._parse_pydantic_fields_from_node(node)
         except Exception as e:
-            logging.error(f"Error parsing Pydantic class: {e}")
+            logger.error(f"Error parsing Pydantic class: {e}")
         return []
 
     def _parse_pydantic_fields_from_node(
@@ -623,18 +625,21 @@ class ConfigSchemaGenerator:
 
 
 def main():
+    """Execute the schema generation process."""
+    parser = argparse.ArgumentParser(
+        description="Generate OM1 configuration schema from codebase."
+    )
+    parser.parse_args()
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     root_dir = os.path.dirname(script_dir)
 
     try:
         schema_path = ConfigSchemaGenerator(root_dir).generate()
-        logging.info(f"✓ Schema generated successfully: {schema_path}")
+        logger.info(f"✓ Schema generated successfully: {schema_path}")
         return 0
     except Exception as e:
-        logging.error(f"✗ Error: {e}")
-        import traceback
-
-        traceback.print_exc()
+        logger.error(f"✗ Error: {e}", exc_info=True)
         return 1
 
 
