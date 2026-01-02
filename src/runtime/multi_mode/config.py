@@ -299,6 +299,29 @@ def load_mode_config(
     with open(config_path, "r") as f:
         raw_config = json5.load(f)
 
+    # Validate required top-level fields
+    if "modes" not in raw_config:
+        raise ValueError(
+            f"Missing required field 'modes' in multi-mode configuration '{config_name}'."
+        )
+
+    if not isinstance(raw_config["modes"], dict):
+        raise ValueError(
+            f"Field 'modes' must be a dictionary in configuration '{config_name}'."
+        )
+
+    if "default_mode" not in raw_config:
+        raise ValueError(
+            f"Missing required field 'default_mode' in multi-mode configuration '{config_name}'."
+        )
+
+    # Ensure default_mode is defined in modes
+    if raw_config["default_mode"] not in raw_config["modes"]:
+        raise ValueError(
+            f"default_mode '{raw_config['default_mode']}' is not defined in modes. "
+            f"Available modes: {list(raw_config['modes'].keys())}"
+        )
+
     config_version = raw_config.get("version")
     verify_runtime_version(config_version, config_name)
 
@@ -350,6 +373,15 @@ def load_mode_config(
     )
 
     for mode_name, mode_data in raw_config.get("modes", {}).items():
+        # Validate mode structure
+        if not isinstance(mode_data, dict):
+            raise ValueError(f"Configuration for mode '{mode_name}' must be a dictionary.")
+
+        if "system_prompt_base" not in mode_data:
+            raise ValueError(
+                f"Missing required field 'system_prompt_base' for mode '{mode_name}'."
+            )
+
         mode_config = ModeConfig(
             version=mode_data.get("version", "1.0"),
             name=mode_name,
@@ -371,18 +403,23 @@ def load_mode_config(
 
         mode_system_config.modes[mode_name] = mode_config
 
-    for rule_data in raw_config.get("transition_rules", []):
-        rule = TransitionRule(
-            from_mode=rule_data["from_mode"],
-            to_mode=rule_data["to_mode"],
-            transition_type=TransitionType(rule_data["transition_type"]),
-            trigger_keywords=rule_data.get("trigger_keywords", []),
-            priority=rule_data.get("priority", 1),
-            cooldown_seconds=rule_data.get("cooldown_seconds", 0.0),
-            timeout_seconds=rule_data.get("timeout_seconds"),
-            context_conditions=rule_data.get("context_conditions", {}),
-        )
-        mode_system_config.transition_rules.append(rule)
+    for i, rule_data in enumerate(raw_config.get("transition_rules", [])):
+        try:
+            rule = TransitionRule(
+                from_mode=rule_data["from_mode"],
+                to_mode=rule_data["to_mode"],
+                transition_type=TransitionType(rule_data["transition_type"]),
+                trigger_keywords=rule_data.get("trigger_keywords", []),
+                priority=rule_data.get("priority", 1),
+                cooldown_seconds=rule_data.get("cooldown_seconds", 0.0),
+                timeout_seconds=rule_data.get("timeout_seconds"),
+                context_conditions=rule_data.get("context_conditions", {}),
+            )
+            mode_system_config.transition_rules.append(rule)
+        except KeyError as e:
+            raise ValueError(f"Transition rule #{i+1} missing required field: {e}")
+        except ValueError as e:
+            raise ValueError(f"Transition rule #{i+1} invalid: {e}")
 
     return mode_system_config
 
