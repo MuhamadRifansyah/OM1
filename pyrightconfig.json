@@ -1,4 +1,5 @@
 {
+  "_comment": "Pyright configuration for OM1. Type checking covers application code (src/) and tests/. See decision rationale below.",
   "include": ["src", "tests"],
   "exclude": [
     "**/system_hw_test",
@@ -6,7 +7,10 @@
     "**/unitree",
     "**/ubtech"
   ],
+  "_exclude_rationale": "system_hw_test: hardware-specific test scripts with minimal type coverage. unitree, ubtech: vendor robot SDK directories with untyped external dependencies. Excluding these avoids type errors in vendored code while maintaining coverage of core application logic.",
   "typeCheckingMode": "standard",
+  "_typeCheckingMode_rationale": "Set to 'standard' (not 'strict') as a pragmatic choice for large Python projects with gradual type adoption. Strict mode is a medium-term goal, not an oversight. Strict mode migration tracked separately to avoid blocking development on type-only issues. Current mode catches undefined names (F) and basic type mismatches while remaining contributor-friendly.",
   "reportMissingImports": "warning",
+  "_reportMissingImports_rationale": "Reports missing imports as warnings (not errors), catching obvious import issues without failing CI on transitive untyped dependencies.",
   "pythonVersion": "3.10"
 }
