@@ -12,6 +12,7 @@ from backgrounds.base import Background
 from inputs import load_input
 from inputs.base import Sensor
 from llm import LLM, load_llm
+from runtime.config_utils import apply_env_variable_fallbacks
 from runtime.robotics import load_unitree
 from runtime.version import verify_runtime_version
 from simulators import load_simulator
@@ -139,51 +140,12 @@ def load_config(
     config_version = raw_config.get("version")
     verify_runtime_version(config_version, config_name)
 
-    g_robot_ip = raw_config.get("robot_ip", None)
-    if g_robot_ip is None or g_robot_ip == "" or g_robot_ip == "192.168.0.241":
-        logging.warning(
-            "No robot ip found in the configuration file. Checking for backup robot ip in your .env file."
-        )
-        backup_key = os.environ.get("ROBOT_IP")
-        g_robot_ip = backup_key
-        if backup_key:
-            raw_config["robot_ip"] = backup_key
-            logging.info("Success - Found ROBOT_IP in your .env file.")
-        else:
-            logging.warning(
-                "Could not find robot ip address. Please find your robot IP address and add it to the configuration file or .env file."
-            )
+    # Apply environment variable fallbacks for api_key, robot_ip, and URID
+    apply_env_variable_fallbacks(raw_config)
+
     g_api_key = raw_config.get("api_key", None)
-    if g_api_key is None or g_api_key == "" or g_api_key == "openmind_free":
-        logging.warning(
-            "No API key found in the configuration file. Checking for backup OM_API_KEY in your .env file."
-        )
-        backup_key = os.environ.get("OM_API_KEY")
-        g_api_key = backup_key
-        if backup_key:
-            raw_config["api_key"] = backup_key
-            logging.info("Success - Found OM_API_KEY in your .env file.")
-        else:
-            logging.warning(
-                "Could not find any API keys. Please get a free key at portal.openmind.org."
-            )
-
+    g_robot_ip = raw_config.get("robot_ip", None)
     g_URID = raw_config.get("URID", None)
-    if g_URID is None or g_URID == "":
-        logging.warning(
-            "No URID found in the configuration file. Multirobot deployments will conflict."
-        )
-
-    if g_URID == "default":
-        logging.info("Checking for backup URID in your .env file.")
-        backup_URID = os.environ.get("URID")
-        if backup_URID:
-            g_URID = backup_URID
-            logging.info("Success - Found URID in your .env file.")
-        else:
-            logging.warning(
-                "Could not find backup URID in your .env file. Using 'default'. Multirobot deployments will conflict."
-            )
 
     g_ut_eth = raw_config.get("unitree_ethernet", None)
     if g_ut_eth is None or g_ut_eth == "":
