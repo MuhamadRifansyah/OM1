@@ -411,6 +411,6 @@ def test_load_config_empty_api_key_falls_back_to_env(caplog, mock_dependencies):
         assert config.api_key == "test_env_api_key_12345"
         # Should log success message
         assert any(
-            "OM_API_KEY" in record.message and "Success" in record.message
+            "Found OM_API_KEY in .env file. Success." in record.message
             for record in caplog.records
         )

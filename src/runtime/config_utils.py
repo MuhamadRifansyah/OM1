@@ -55,7 +55,7 @@ def apply_env_variable_fallbacks(config: Dict) -> Dict:
         if backup_key:
             config["api_key"] = backup_key
             g_api_key = backup_key
-            logging.info("Found OM_API_KEY in .env file.")
+            logging.info("Found OM_API_KEY in .env file. Success.")
         else:
             logging.warning(
                 "Could not find any API keys. Please get a free key at portal.openmind.org."
