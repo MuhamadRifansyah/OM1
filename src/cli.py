@@ -188,29 +188,48 @@ def validate_config(
         uv run src/cli.py validate-config test --check-components --skip-inputs
         uv run src/cli.py validate-config test --check-components --allow-missing
     """
+    all_errors = []
+    all_warnings = []
+
+    # Resolve config path (terminal error - cannot continue without valid path)
     try:
-        # Resolve config path
         config_path = _resolve_config_path(config_name)
+    except FileNotFoundError as e:
+        print("Error: Configuration file not found")
+        print(f"   {e}")
+        raise typer.Exit(1)
 
-        if verbose:
-            print(f"Validating: {config_path}")
-            print("-" * 50)
+    if verbose:
+        print(f"Validating: {config_path}")
+        print("-" * 50)
 
-        # Load and parse JSON5
+    # Load and parse JSON5
+    raw_config = None
+    try:
         with open(config_path, "r") as f:
             raw_config = json5.load(f)
-
         if verbose:
             print("JSON5 syntax valid")
+    except ValueError as e:
+        error_msg = str(e)
+        all_errors.append(("JSON5 Syntax Error", error_msg))
+    except Exception as e:
+        all_errors.append(("JSON5 Parsing Error", str(e)))
 
-        # Detect config type
-        is_multi_mode = "modes" in raw_config and "default_mode" in raw_config
-        config_type = "multi-mode" if is_multi_mode else "single-mode"
+    # If JSON5 parsing failed, cannot proceed with further validation
+    if raw_config is None:
+        _print_validation_errors(all_errors, all_warnings, verbose)
+        raise typer.Exit(1)
 
-        if verbose:
-            print(f"Detected {config_type} configuration")
+    # Detect config type
+    is_multi_mode = "modes" in raw_config and "default_mode" in raw_config
+    config_type = "multi-mode" if is_multi_mode else "single-mode"
 
-        # Schema validation
+    if verbose:
+        print(f"Detected {config_type} configuration")
+
+    # Schema validation (collect error, continue)
+    try:
         schema_file = (
             "multi_mode_schema.json" if is_multi_mode else "single_mode_schema.json"
         )
@@ -225,24 +244,43 @@ def validate_config(
 
         if verbose:
             print("Schema validation passed")
+    except ValidationError as e:
+        field_path = ".".join(str(p) for p in e.path) if e.path else "root"
+        error_msg = f"Field '{field_path}': {e.message}"
+        all_errors.append(("Schema Validation Error", error_msg))
+    except Exception as e:
+        all_errors.append(("Schema Validation Error", str(e)))
 
-        # Component validation (if requested)
-        if check_components:
-            if not verbose:
-                print(
-                    "Validating components (this may take a moment)...",
-                    end="",
-                    flush=True,
-                )
-            _validate_components(
+    # Component validation (if requested, collect errors, continue)
+    if check_components:
+        if not verbose:
+            print(
+                "Validating components (this may take a moment)...",
+                end="",
+                flush=True,
+            )
+        try:
+            comp_errors, comp_warnings = _validate_components(
                 raw_config, is_multi_mode, verbose, skip_inputs, allow_missing
             )
+            all_errors.extend(comp_errors)
+            all_warnings.extend(comp_warnings)
             if not verbose:
-                print("\rAll components validated successfully!           ")
+                print("\rComponent validation complete.                  ")
+        except Exception as e:
+            if verbose:
+                traceback.print_exc()
+            all_errors.append(("Component Validation Error", str(e)))
 
-        # API key check (warning only)
-        _check_api_key(raw_config, verbose)
+    # API key check (warning only)
+    _check_api_key(raw_config, verbose)
 
+    # Report all errors and warnings
+    if all_errors or all_warnings:
+        _print_validation_errors(all_errors, all_warnings, verbose)
+        if all_errors:
+            raise typer.Exit(1)
+    else:
         # Success message
         print()
         print("=" * 50)
@@ -252,43 +290,52 @@ def validate_config(
         if verbose:
             _print_config_summary(raw_config, is_multi_mode)
 
-    except FileNotFoundError as e:
-        print("Error: Configuration file not found")
-        print(f"   {e}")
-        raise typer.Exit(1)
 
-    except ValueError as e:
-        if "line" in str(e).lower() or "parse" in str(e).lower():
-            print("Error: Invalid JSON5 syntax")
-            print(f"   {e}")
-        elif "Component validation" in str(e):
-            pass  # Already printed by _validate_components
-        else:
-            print("Error: Unexpected validation error")
-            print(f"   {e}")
-            if verbose:
+def _print_validation_errors(errors: list, warnings: list, verbose: bool = False) -> None:
+    """
+    Print aggregated validation errors and warnings in categorized format.
 
-                traceback.print_exc()
-        raise typer.Exit(1)
+    Parameters
+    ----------
+    errors : list
+        List of error tuples (category, message)
+    warnings : list
+        List of warning tuples (category, message)
+    verbose : bool
+        Whether to print verbose output
+    """
+    if errors:
+        print()
+        print("=" * 50)
+        print(f"Validation failed with {len(errors)} error(s)")
+        print("=" * 50)
 
-    except ValidationError as e:
-        print("Error: Schema validation failed")
-        field_path = ".".join(str(p) for p in e.path) if e.path else "root"
-        print(f"   Field: {field_path}")
-        print(f"   Issue: {e.message}")
-        if verbose and e.schema:
-            print("\n   Schema requirement:")
-            print(f"   {e.schema}")
-        raise typer.Exit(1)
+        # Group errors by category
+        errors_by_category = {}
+        for category, message in errors:
+            if category not in errors_by_category:
+                errors_by_category[category] = []
+            errors_by_category[category].append(message)
 
-    except Exception as e:
-        if "Component validation" not in str(e):
-            print("Error: Unexpected validation error")
-            print(f"   {e}")
-            if verbose:
+        for category in sorted(errors_by_category.keys()):
+            print(f"\n{category}:")
+            for message in errors_by_category[category]:
+                print(f"   - {message}")
 
-                traceback.print_exc()
-        raise typer.Exit(1)
+    if warnings:
+        print()
+        print("Warnings:")
+        # Group warnings by category
+        warnings_by_category = {}
+        for category, message in warnings:
+            if category not in warnings_by_category:
+                warnings_by_category[category] = []
+            warnings_by_category[category].append(message)
+
+        for category in sorted(warnings_by_category.keys()):
+            print(f"   ({category})")
+            for message in warnings_by_category[category]:
+                print(f"      - {message}")
 
 
 def _resolve_config_path(config_name: str) -> str:
@@ -337,7 +384,7 @@ def _validate_components(
     verbose: bool,
     skip_inputs: bool = False,
     allow_missing: bool = False,
-):
+) -> tuple:
     """
     Validate that all component types exist in codebase.
 
@@ -354,10 +401,11 @@ def _validate_components(
     allow_missing : bool
         Whether to allow missing components (warnings only)
 
-    Raises
-    ------
-    ValueError
-        If component validation fails and allow_missing is False
+    Returns
+    -------
+    tuple
+        (errors, warnings) where errors is a list of error tuples
+        and warnings is a list of warning tuples
     """
     errors = []
     warnings = []
@@ -374,9 +422,9 @@ def _validate_components(
                 if llm_type and not _check_llm_exists(llm_type):
                     msg = f"Global LLM type '{llm_type}' not found"
                     if allow_missing:
-                        warnings.append(msg)
+                        warnings.append(("Component Missing", msg))
                     else:
-                        errors.append(msg)
+                        errors.append(("Component Missing", msg))
 
             for mode_name, mode_data in raw_config.get("modes", {}).items():
                 if verbose:
@@ -398,26 +446,17 @@ def _validate_components(
     except Exception as e:
         error_msg = f"Component validation error: {e}"
         if allow_missing:
-            warnings.append(error_msg)
+            warnings.append(("Component Validation Exception", error_msg))
         else:
-            errors.append(error_msg)
+            errors.append(("Component Validation Exception", error_msg))
         if verbose:
-
             traceback.print_exc()
 
-    if warnings:
-        print("Component validation warnings:")
-        for warning in warnings:
-            print(f"   - {warning}")
-
-    if errors:
-        print("Component validation failed:")
-        for error in errors:
-            print(f"   - {error}")
-        raise ValueError("Component validation failed")
-
     if verbose:
-        print("All components exist")
+        if not errors:
+            print("All components exist")
+
+    return errors, warnings
 
 
 def _validate_mode_components(
@@ -446,7 +485,7 @@ def _validate_mode_components(
     Returns
     -------
     tuple
-        (errors, warnings) lists
+        (errors, warnings) lists of tuples (category, message)
     """
     errors = []
     warnings = []
@@ -465,11 +504,11 @@ def _validate_mode_components(
                     if not _check_input_exists(input_type):
                         msg = f"[{mode_name}] Input type '{input_type}' not found"
                         if allow_missing:
-                            warnings.append(msg)
+                            warnings.append(("Component Missing", msg))
                             if verbose:
                                 print("(warning)")
                         else:
-                            errors.append(msg)
+                            errors.append(("Component Missing", msg))
                             if verbose:
                                 print("(not found)")
                     else:
@@ -487,11 +526,11 @@ def _validate_mode_components(
                 if not _check_llm_exists(llm_type):
                     msg = f"[{mode_name}] LLM type '{llm_type}' not found"
                     if allow_missing:
-                        warnings.append(msg)
+                        warnings.append(("Component Missing", msg))
                         if verbose:
                             print("(warning)")
                     else:
-                        errors.append(msg)
+                        errors.append(("Component Missing", msg))
                         if verbose:
                             print("(not found)")
                 else:
@@ -510,11 +549,11 @@ def _validate_mode_components(
                 if not _check_simulator_exists(sim_type):
                     msg = f"[{mode_name}] Simulator type '{sim_type}' not found"
                     if allow_missing:
-                        warnings.append(msg)
+                        warnings.append(("Component Missing", msg))
                         if verbose:
                             print("(warning)")
                     else:
-                        errors.append(msg)
+                        errors.append(("Component Missing", msg))
                         if verbose:
                             print("(not found)")
                 else:
@@ -533,11 +572,11 @@ def _validate_mode_components(
                 if not _check_action_exists(action_name):
                     msg = f"[{mode_name}] Action '{action_name}' not found"
                     if allow_missing:
-                        warnings.append(msg)
+                        warnings.append(("Component Missing", msg))
                         if verbose:
                             print("(warning)")
                     else:
-                        errors.append(msg)
+                        errors.append(("Component Missing", msg))
                         if verbose:
                             print("(not found)")
                 else:
@@ -556,11 +595,11 @@ def _validate_mode_components(
                 if not _check_background_exists(bg_type):
                     msg = f"[{mode_name}] Background type '{bg_type}' not found"
                     if allow_missing:
-                        warnings.append(msg)
+                        warnings.append(("Component Missing", msg))
                         if verbose:
                             print("(warning)")
                     else:
-                        errors.append(msg)
+                        errors.append(("Component Missing", msg))
                         if verbose:
                             print("(not found)")
                 else:
@@ -570,9 +609,9 @@ def _validate_mode_components(
     except Exception as e:
         msg = f"[{mode_name}] Error during validation: {e}"
         if allow_missing:
-            warnings.append(msg)
+            warnings.append(("Component Validation Exception", msg))
         else:
-            errors.append(msg)
+            errors.append(("Component Validation Exception", msg))
         if verbose:
             print(f"    Error: {e}")
 
