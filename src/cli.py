@@ -291,7 +291,9 @@ def validate_config(
             _print_config_summary(raw_config, is_multi_mode)
 
 
-def _print_validation_errors(errors: list, warnings: list, verbose: bool = False) -> None:
+def _print_validation_errors(
+    errors: list, warnings: list, verbose: bool = False
+) -> None:
     """
     Print aggregated validation errors and warnings in categorized format.
 
