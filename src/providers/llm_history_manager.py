@@ -1,6 +1,7 @@
 import asyncio
 import functools
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, List, Optional, TypeVar, Union
 
@@ -87,6 +88,10 @@ class LLMHistoryManager:
 
         # io provider
         self.io_provider = IOProvider()
+
+        # debounce state
+        self.last_call_time: float = 0.0
+        self.last_payload_content: Optional[str] = None
 
     async def summarize_messages(self, messages: List[ChatMessage]) -> ChatMessage:
         """
@@ -302,8 +307,23 @@ class LLMHistoryManager:
                         logging.debug(f"LLM: {input_info}")
                         formatted_inputs += f"{input_type}. {input_info.input} | "
 
+                if formatted_inputs == f"{self.agent_name} sensed the following: ":
+                    # Return None to skip LLM call for empty payload
+                    return None
+
                 formatted_inputs = formatted_inputs.replace("..", ".")
                 formatted_inputs = formatted_inputs.replace("  ", " ")
+
+                current_time = time.time()
+                if (
+                    self.history_manager.last_payload_content == formatted_inputs
+                    and (current_time - self.history_manager.last_call_time) < 1.0
+                ):
+                    # Return None to skip LLM call for redundant payload within debounce interval
+                    return None
+
+                self.history_manager.last_payload_content = formatted_inputs
+                self.history_manager.last_call_time = current_time
 
                 inputs = ChatMessage(role="user", content=formatted_inputs)
 
