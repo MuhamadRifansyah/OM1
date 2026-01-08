@@ -154,10 +154,9 @@ class LLMHistoryManager:
                 ],
             }
 
-            client = self.client
-            if isinstance(client, openai.AsyncClient):
+            if isinstance(self.client, openai.AsyncClient):
                 response = await asyncio.wait_for(
-                    client.chat.completions.create(**api_kwargs),
+                    self.client.chat.completions.create(**api_kwargs),
                     timeout=timeout,
                 )
             else:
@@ -165,7 +164,9 @@ class LLMHistoryManager:
                 response = await asyncio.wait_for(
                     loop.run_in_executor(
                         None,
-                        functools.partial(client.chat.completions.create, **api_kwargs),
+                        functools.partial(
+                            self.client.chat.completions.create, **api_kwargs
+                        ),
                     ),
                     timeout=timeout,
                 )
