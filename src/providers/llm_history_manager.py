@@ -2,7 +2,7 @@ import asyncio
 import functools
 import logging
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, List, Optional, TypeVar, Union
+from typing import Any, Awaitable, Callable, List, Optional, Protocol, TypeVar, Union
 
 import openai
 
@@ -10,7 +10,17 @@ from llm import LLMConfig
 
 from .io_provider import IOProvider
 
-R = TypeVar("R")
+
+class ActionItem(Protocol):
+    type: str
+    value: Optional[str]
+
+
+class ResponseWithActions(Protocol):
+    actions: List[ActionItem]
+
+
+R = TypeVar("R", bound=Union[ResponseWithActions, None])
 
 
 @dataclass
@@ -325,7 +335,7 @@ class LLMHistoryManager:
                                 ACTION_MAP[action.type.lower()].format(
                                     action.value if action.value else ""
                                 )
-                                for action in response.actions  # type: ignore
+                                for action in response.actions
                                 if action.type.lower() in ACTION_MAP
                             )
                         )
