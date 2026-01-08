@@ -131,6 +131,18 @@ def start(
 
     except FileNotFoundError:
         logging.error(f"Configuration file not found: {config_path}")
+
+        config_dir = os.path.join(os.path.dirname(__file__), "../config")
+        if os.path.exists(config_dir):
+            configs = [
+                f[:-6]
+                for f in os.listdir(config_dir)
+                if f.endswith(".json5") and not f.startswith(".")
+            ]
+            if configs:
+                logging.info("Available configurations:")
+                for config in sorted(configs):
+                    logging.info(f"  - {config}")
         raise typer.Exit(1)
     except Exception as e:
         logging.error(f"Error loading configuration: {e}")
