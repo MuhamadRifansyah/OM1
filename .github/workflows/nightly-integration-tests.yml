@@ -93,30 +93,36 @@ jobs:
           import xml.etree.ElementTree as ET
 
           xml_file = 'test-reports/results.xml'
-          tree = ET.parse(xml_file)
-          root = tree.getroot()
-
-          def get_val(node, attr):
-              return int(node.get(attr, 0))
-
           tests = 0
           failures = 0
           errors = 0
 
-          if root.tag == 'testsuites':
-              if root.get('tests'):
-                  tests = get_val(root, 'tests')
-                  failures = get_val(root, 'failures')
-                  errors = get_val(root, 'errors')
-              else:
-                  for suite in root.findall('testsuite'):
-                      tests += get_val(suite, 'tests')
-                      failures += get_val(suite, 'failures')
-                      errors += get_val(suite, 'errors')
+          if os.path.exists(xml_file):
+              try:
+                  tree = ET.parse(xml_file)
+                  root = tree.getroot()
+
+                  def get_val(node, attr):
+                      return int(node.get(attr, 0))
+
+                  if root.tag == 'testsuites':
+                      if root.get('tests'):
+                          tests = get_val(root, 'tests')
+                          failures = get_val(root, 'failures')
+                          errors = get_val(root, 'errors')
+                      else:
+                          for suite in root.findall('testsuite'):
+                              tests += get_val(suite, 'tests')
+                              failures += get_val(suite, 'failures')
+                              errors += get_val(suite, 'errors')
+                  else:
+                      tests = get_val(root, 'tests')
+                      failures = get_val(root, 'failures')
+                      errors = get_val(root, 'errors')
+              except Exception:
+                  errors = 1
           else:
-              tests = get_val(root, 'tests')
-              failures = get_val(root, 'failures')
-              errors = get_val(root, 'errors')
+              errors = 1
 
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f"total={tests}\nfailures={failures}\nerrors={errors}\n")
