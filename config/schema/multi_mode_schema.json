@@ -157,6 +157,7 @@
                             }
                         }
                     }
+                }
             },
             "additionalProperties": false
         },
@@ -215,5 +216,4 @@
         }
     },
     "additionalProperties": false
-}
 }
