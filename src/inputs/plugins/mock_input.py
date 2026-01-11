@@ -1,8 +1,6 @@
 import asyncio
 import logging
-import threading
 import time
-from queue import Empty, Queue
 from typing import List, Optional
 
 import websockets
@@ -94,33 +92,13 @@ class MockInput(FuserInput[MockSensorConfig, Optional[str]]):
         self.io_provider = IOProvider()
 
         # Buffer for storing messages
-        self.message_buffer: Queue[str] = Queue()
+        self.message_buffer: asyncio.Queue = asyncio.Queue()
 
         # WebSocket configuration
         self.host = self.config.host
         self.port = self.config.port
         self.server = None
         self.connected_clients = set()
-        self.loop = None
-
-        # Start WebSocket server in a separate thread
-        self.server_thread = threading.Thread(
-            target=self._start_server_thread, daemon=True
-        )
-        self.server_thread.start()
-
-    def _start_server_thread(self):
-        """
-        Start an asyncio event loop in a thread to run the websockets server.
-        """
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-        self.loop.run_until_complete(self._start_server())
-
-        try:
-            self.loop.run_forever()
-        finally:
-            self.loop.close()
 
     async def _start_server(self):
         """
@@ -167,7 +145,7 @@ class MockInput(FuserInput[MockSensorConfig, Optional[str]]):
                             continue
 
                     logging.info(f"Received message: {text}")
-                    self.message_buffer.put(text)
+                    await self.message_buffer.put(text)
 
                     await websocket.send(f"Received: {text}")
 
@@ -192,12 +170,14 @@ class MockInput(FuserInput[MockSensorConfig, Optional[str]]):
         Optional[str]
             The next message from the buffer if available, None otherwise
         """
-        await asyncio.sleep(0.5)
-        try:
-            message = self.message_buffer.get_nowait()
-            return message
-        except Empty:
+        if self.server is None:
+            await self._start_server()
+
+        if self.server is None:
+            await asyncio.sleep(1)
             return None
+
+        return await self.message_buffer.get()
 
     async def _raw_to_text(self, raw_input: Optional[str]) -> Optional[Message]:
         """
