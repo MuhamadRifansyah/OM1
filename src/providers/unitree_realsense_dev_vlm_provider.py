@@ -213,7 +213,9 @@ class UnitreeRealSenseDevVideoStream(VideoStream):
                 )
                 formats = result.stdout
             except Exception as e:
-                logger.exception("Failed to run v4l2-ctl for device '%s': %s", device, e)
+                logger.exception(
+                    "Failed to run v4l2-ctl for device '%s': %s", device, e
+                )
                 continue
 
             try:
