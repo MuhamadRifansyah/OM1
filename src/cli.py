@@ -610,6 +610,9 @@ def _check_class_in_dir(directory: str, class_name: str) -> bool:
                     for node in tree.body:
                         if isinstance(node, ast.ClassDef) and node.name == class_name:
                             return True
+            except SyntaxError as e:
+                print(f"\nWarning: Syntax error parsing {filepath}: {e}")
+                continue
             except Exception:
                 continue
     return False
