@@ -158,7 +158,7 @@ def validate_config(
     check_components: bool = typer.Option(
         True,
         "--check-components",
-        help="Verify that all components (inputs, LLMs, actions) exist in codebase (slower but thorough)",
+        help="Verify that all components (inputs, LLMs, actions) exist in codebase (static name check only)",
     ),
     skip_inputs: bool = typer.Option(
         False,
@@ -178,7 +178,7 @@ def validate_config(
     - Valid JSON5 syntax
     - Schema compliance (required fields, correct types)
     - API key configuration (warning only)
-    - Component existence (with --check-components flag)
+    - Component existence (static name check via AST with --check-components flag)
 
     Examples
     --------
