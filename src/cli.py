@@ -3,6 +3,7 @@ import json
 import logging
 import multiprocessing as mp
 import os
+import sys
 import traceback
 
 import dotenv
@@ -194,27 +195,27 @@ def validate_config(
         config_path = _resolve_config_path(config_name)
 
         if verbose:
-            print(f"Validating: {config_path}")
-            print("-" * 50)
+            print(f"Validating: {config_path}", file=sys.stderr)
+            print("-" * 50, file=sys.stderr)
 
         # Load and parse JSON5
         try:
             with open(config_path, "r") as f:
                 raw_config = json5.load(f)
         except ValueError as e:
-            print("Error: Invalid JSON5 syntax")
-            print(f"   {e}")
+            print("Error: Invalid JSON5 syntax", file=sys.stderr)
+            print(f"   {e}", file=sys.stderr)
             raise typer.Exit(1)
 
         if verbose:
-            print("JSON5 syntax valid")
+            print("JSON5 syntax valid", file=sys.stderr)
 
         # Detect config type
         is_multi_mode = "modes" in raw_config and "default_mode" in raw_config
         config_type = "multi-mode" if is_multi_mode else "single-mode"
 
         if verbose:
-            print(f"Detected {config_type} configuration")
+            print(f"Detected {config_type} configuration", file=sys.stderr)
 
         # Schema validation
         schema_file = (
@@ -230,7 +231,7 @@ def validate_config(
         validate(instance=raw_config, schema=schema)
 
         if verbose:
-            print("Schema validation passed")
+            print("Schema validation passed", file=sys.stderr)
 
         # Component validation (if requested)
         if check_components:
@@ -239,12 +240,13 @@ def validate_config(
                     "Validating components (this may take a moment)...",
                     end="",
                     flush=True,
+                    file=sys.stderr,
                 )
             _validate_components(
                 raw_config, is_multi_mode, verbose, skip_inputs, allow_missing
             )
             if not verbose:
-                print("\rAll components validated successfully!           ")
+                print("\rAll components validated successfully!           ", file=sys.stderr)
 
         # API key check (warning only)
         _check_api_key(raw_config, verbose)
@@ -259,35 +261,35 @@ def validate_config(
             _print_config_summary(raw_config, is_multi_mode)
 
     except FileNotFoundError as e:
-        print("Error: Configuration file not found")
-        print(f"   {e}")
+        print("Error: Configuration file not found", file=sys.stderr)
+        print(f"   {e}", file=sys.stderr)
         raise typer.Exit(1)
 
     except ValueError as e:
         if "Component validation" in str(e):
             pass  # Already printed by _validate_components
         else:
-            print("Error: Unexpected validation error")
-            print(f"   {e}")
+            print("Error: Unexpected validation error", file=sys.stderr)
+            print(f"   {e}", file=sys.stderr)
             if verbose:
 
                 traceback.print_exc()
         raise typer.Exit(1)
 
     except ValidationError as e:
-        print("Error: Schema validation failed")
+        print("Error: Schema validation failed", file=sys.stderr)
         field_path = ".".join(str(p) for p in e.path) if e.path else "root"
-        print(f"   Field: {field_path}")
-        print(f"   Issue: {e.message}")
+        print(f"   Field: {field_path}", file=sys.stderr)
+        print(f"   Issue: {e.message}", file=sys.stderr)
         if verbose and e.schema:
-            print("\n   Schema requirement:")
-            print(f"   {e.schema}")
+            print("\n   Schema requirement:", file=sys.stderr)
+            print(f"   {e.schema}", file=sys.stderr)
         raise typer.Exit(1)
 
     except Exception as e:
         if "Component validation" not in str(e):
-            print("Error: Unexpected validation error")
-            print(f"   {e}")
+            print("Error: Unexpected validation error", file=sys.stderr)
+            print(f"   {e}", file=sys.stderr)
             if verbose:
 
                 traceback.print_exc()
@@ -366,14 +368,14 @@ def _validate_components(
     warnings = []
 
     if verbose:
-        print("Checking component existence...")
+        print("Checking component existence...", file=sys.stderr)
 
     try:
         if is_multi_mode:
             if "cortex_llm" in raw_config:
                 llm_type = raw_config["cortex_llm"].get("type")
                 if llm_type and verbose:
-                    print(f"  Checking global LLM: {llm_type}")
+                    print(f"  Checking global LLM: {llm_type}", file=sys.stderr)
                 if llm_type and not _check_llm_exists(llm_type):
                     msg = f"Global LLM type '{llm_type}' not found"
                     if allow_missing:
@@ -383,7 +385,7 @@ def _validate_components(
 
             for mode_name, mode_data in raw_config.get("modes", {}).items():
                 if verbose:
-                    print(f"  Validating mode: {mode_name}")
+                    print(f"  Validating mode: {mode_name}", file=sys.stderr)
                 mode_errors, mode_warnings = _validate_mode_components(
                     mode_name, mode_data, verbose, skip_inputs, allow_missing
                 )
@@ -391,7 +393,7 @@ def _validate_components(
                 warnings.extend(mode_warnings)
         else:
             if verbose:
-                print("  Validating single-mode configuration")
+                print("  Validating single-mode configuration", file=sys.stderr)
             mode_errors, mode_warnings = _validate_mode_components(
                 "config", raw_config, verbose, skip_inputs, allow_missing
             )
@@ -409,18 +411,18 @@ def _validate_components(
             traceback.print_exc()
 
     if warnings:
-        print("Component validation warnings:")
+        print("Component validation warnings:", file=sys.stderr)
         for warning in warnings:
-            print(f"   - {warning}")
+            print(f"   - {warning}", file=sys.stderr)
 
     if errors:
-        print("Component validation failed:")
+        print("Component validation failed:", file=sys.stderr)
         for error in errors:
-            print(f"   - {error}")
+            print(f"   - {error}", file=sys.stderr)
         raise ValueError("Component validation failed")
 
     if verbose:
-        print("All components exist")
+        print("All components exist", file=sys.stderr)
 
 
 def _validate_mode_components(
@@ -458,117 +460,117 @@ def _validate_mode_components(
         if not skip_inputs:
             inputs = mode_data.get("agent_inputs", [])
             if verbose and inputs:
-                print(f"    Checking {len(inputs)} inputs...")
+                print(f"    Checking {len(inputs)} inputs...", file=sys.stderr)
 
             for inp in inputs:
                 input_type = inp.get("type")
                 if input_type:
                     if verbose:
-                        print(f"      Input: {input_type}", end=" ")
+                        print(f"      Input: {input_type}", end=" ", file=sys.stderr)
                     if not _check_input_exists(input_type):
                         msg = f"[{mode_name}] Input type '{input_type}' not found"
                         if allow_missing:
                             warnings.append(msg)
                             if verbose:
-                                print("(warning)")
+                                print("(warning)", file=sys.stderr)
                         else:
                             errors.append(msg)
                             if verbose:
-                                print("(not found)")
+                                print("(not found)", file=sys.stderr)
                     else:
                         if verbose:
-                            print("OK")
+                            print("OK", file=sys.stderr)
         else:
             if verbose:
-                print("    Skipping input validation")
+                print("    Skipping input validation", file=sys.stderr)
 
         if "cortex_llm" in mode_data:
             llm_type = mode_data["cortex_llm"].get("type")
             if llm_type:
                 if verbose:
-                    print(f"    LLM: {llm_type}", end=" ")
+                    print(f"    LLM: {llm_type}", end=" ", file=sys.stderr)
                 if not _check_llm_exists(llm_type):
                     msg = f"[{mode_name}] LLM type '{llm_type}' not found"
                     if allow_missing:
                         warnings.append(msg)
                         if verbose:
-                            print("(warning)")
+                            print("(warning)", file=sys.stderr)
                     else:
                         errors.append(msg)
                         if verbose:
-                            print("(not found)")
+                            print("(not found)", file=sys.stderr)
                 else:
                     if verbose:
-                        print("OK")
+                        print("OK", file=sys.stderr)
 
         simulators = mode_data.get("simulators", [])
         if verbose and simulators:
-            print(f"    Checking {len(simulators)} simulators...")
+            print(f"    Checking {len(simulators)} simulators...", file=sys.stderr)
 
         for sim in simulators:
             sim_type = sim.get("type")
             if sim_type:
                 if verbose:
-                    print(f"      Simulator: {sim_type}", end=" ")
+                    print(f"      Simulator: {sim_type}", end=" ", file=sys.stderr)
                 if not _check_simulator_exists(sim_type):
                     msg = f"[{mode_name}] Simulator type '{sim_type}' not found"
                     if allow_missing:
                         warnings.append(msg)
                         if verbose:
-                            print("(warning)")
+                            print("(warning)", file=sys.stderr)
                     else:
                         errors.append(msg)
                         if verbose:
-                            print("(not found)")
+                            print("(not found)", file=sys.stderr)
                 else:
                     if verbose:
-                        print("OK")
+                        print("OK", file=sys.stderr)
 
         actions = mode_data.get("agent_actions", [])
         if verbose and actions:
-            print(f"    Checking {len(actions)} actions...")
+            print(f"    Checking {len(actions)} actions...", file=sys.stderr)
 
         for action in actions:
             action_name = action.get("name")
             if action_name:
                 if verbose:
-                    print(f"      Action: {action_name}", end=" ")
+                    print(f"      Action: {action_name}", end=" ", file=sys.stderr)
                 if not _check_action_exists(action_name):
                     msg = f"[{mode_name}] Action '{action_name}' not found"
                     if allow_missing:
                         warnings.append(msg)
                         if verbose:
-                            print("(warning)")
+                            print("(warning)", file=sys.stderr)
                     else:
                         errors.append(msg)
                         if verbose:
-                            print("(not found)")
+                            print("(not found)", file=sys.stderr)
                 else:
                     if verbose:
-                        print("OK")
+                        print("OK", file=sys.stderr)
 
         backgrounds = mode_data.get("backgrounds", [])
         if verbose and backgrounds:
-            print(f"    Checking {len(backgrounds)} backgrounds...")
+            print(f"    Checking {len(backgrounds)} backgrounds...", file=sys.stderr)
 
         for bg in backgrounds:
             bg_type = bg.get("type")
             if bg_type:
                 if verbose:
-                    print(f"      Background: {bg_type}", end=" ")
+                    print(f"      Background: {bg_type}", end=" ", file=sys.stderr)
                 if not _check_background_exists(bg_type):
                     msg = f"[{mode_name}] Background type '{bg_type}' not found"
                     if allow_missing:
                         warnings.append(msg)
                         if verbose:
-                            print("(warning)")
+                            print("(warning)", file=sys.stderr)
                     else:
                         errors.append(msg)
                         if verbose:
-                            print("(not found)")
+                            print("(not found)", file=sys.stderr)
                 else:
                     if verbose:
-                        print("OK")
+                        print("OK", file=sys.stderr)
 
     except Exception as e:
         msg = f"[{mode_name}] Error during validation: {e}"
@@ -577,7 +579,7 @@ def _validate_mode_components(
         else:
             errors.append(msg)
         if verbose:
-            print(f"    Error: {e}")
+            print(f"    Error: {e}", file=sys.stderr)
 
     return errors, warnings
 
@@ -729,15 +731,15 @@ def _check_api_key(raw_config: dict, verbose: bool):
     env_api_key = os.environ.get("OM_API_KEY", "")
 
     if (not api_key or api_key == "openmind_free") and not env_api_key:
-        print()
-        print("Warning: No API key configured")
-        print("   Get a free key at: https://portal.openmind.org")
-        print("   Or set OM_API_KEY in your .env file")
+        print(file=sys.stderr)
+        print("Warning: No API key configured", file=sys.stderr)
+        print("   Get a free key at: https://portal.openmind.org", file=sys.stderr)
+        print("   Or set OM_API_KEY in your .env file", file=sys.stderr)
     elif verbose:
         if env_api_key:
-            print("API key configured (from environment)")
+            print("API key configured (from environment)", file=sys.stderr)
         else:
-            print("API key configured")
+            print("API key configured", file=sys.stderr)
 
 
 def _print_config_summary(raw_config: dict, is_multi_mode: bool):
@@ -751,22 +753,22 @@ def _print_config_summary(raw_config: dict, is_multi_mode: bool):
     is_multi_mode : bool
         Whether this is a multi-mode configuration
     """
-    print()
-    print("Configuration Summary:")
-    print("-" * 50)
+    print(file=sys.stderr)
+    print("Configuration Summary:", file=sys.stderr)
+    print("-" * 50, file=sys.stderr)
 
     if is_multi_mode:
-        print("   Type: Multi-mode")
-        print(f"   Name: {raw_config.get('name', 'N/A')}")
-        print(f"   Default Mode: {raw_config.get('default_mode')}")
-        print(f"   Modes: {len(raw_config.get('modes', {}))}")
-        print(f"   Transition Rules: {len(raw_config.get('transition_rules', []))}")
+        print("   Type: Multi-mode", file=sys.stderr)
+        print(f"   Name: {raw_config.get('name', 'N/A')}", file=sys.stderr)
+        print(f"   Default Mode: {raw_config.get('default_mode')}", file=sys.stderr)
+        print(f"   Modes: {len(raw_config.get('modes', {}))}", file=sys.stderr)
+        print(f"   Transition Rules: {len(raw_config.get('transition_rules', []))}", file=sys.stderr)
     else:
-        print("   Type: Single-mode")
-        print(f"   Name: {raw_config.get('name', 'N/A')}")
-        print(f"   Frequency: {raw_config.get('hertz', 'N/A')} Hz")
-        print(f"   Inputs: {len(raw_config.get('agent_inputs', []))}")
-        print(f"   Actions: {len(raw_config.get('agent_actions', []))}")
+        print("   Type: Single-mode", file=sys.stderr)
+        print(f"   Name: {raw_config.get('name', 'N/A')}", file=sys.stderr)
+        print(f"   Frequency: {raw_config.get('hertz', 'N/A')} Hz", file=sys.stderr)
+        print(f"   Inputs: {len(raw_config.get('agent_inputs', []))}", file=sys.stderr)
+        print(f"   Actions: {len(raw_config.get('agent_actions', []))}", file=sys.stderr)
 
 
 if __name__ == "__main__":
