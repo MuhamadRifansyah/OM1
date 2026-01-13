@@ -2,6 +2,7 @@ import base64
 import glob
 import logging
 import subprocess
+import sys
 import time
 from typing import Callable, List, Optional, Tuple
 
@@ -144,7 +145,7 @@ class UnitreeRealSenseDevVideoStream(VideoStream):
 
         Parameters
         ----------
-        cam : str
+        cam : str or int
             The device path (e.g., '/dev/video0')
 
         Returns
@@ -188,11 +189,19 @@ class UnitreeRealSenseDevVideoStream(VideoStream):
 
         Returns
         -------
-        str or None
+        str or int or None
             The first viable RGB device, or None if none is found.
         """
         if skip_devices is None:
             skip_devices = set()
+
+        if not sys.platform.startswith("linux"):
+            # On non-Linux systems, v4l2-ctl is not available.
+            # Fallback to default camera index 0 if not already skipped.
+            if 0 not in skip_devices:
+                logger.info("Non-Linux platform detected. Defaulting to camera index 0.")
+                return 0
+            return None
 
         try:
             video_devices = sorted(glob.glob("/dev/video*"))
