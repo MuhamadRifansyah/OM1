@@ -168,12 +168,12 @@ class UnitreeRealSenseDevVideoStream(VideoStream):
             )
         try:
             cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to set buffer size for device %s: %s", cam, e)
         try:
             cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))  # type: ignore
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to set MJPG format for device %s: %s", cam, e)
         return cap
 
     def _find_rgb_device(self, skip_devices=None):
