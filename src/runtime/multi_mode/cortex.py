@@ -587,31 +587,78 @@ class ModeCortexRuntime:
             for name, config in self.mode_config.modes.items()
         }
 
-    def _get_file_mtime(self) -> float:
+    async def _get_file_mtime_async(self, timeout: float = 5.0) -> float:
         """
-        Get the modification time of the config file.
+        Get the modification time of the config file with timeout protection.
+
+        Runs filesystem operation in executor to avoid blocking event loop.
+        If filesystem is slow/unresponsive (NFS, SMB), times out gracefully.
+
+        Parameters
+        ----------
+        timeout : float
+            Maximum seconds to wait for filesystem operation (default: 5.0)
 
         Returns
         -------
         float
-            The modification time as a timestamp
+            Last modification time as a timestamp, or 0.0 on error/timeout
         """
-        if self.config_path and os.path.exists(self.config_path):
-            return os.path.getmtime(self.config_path)
-        return 0.0
+        if not self.config_path:
+            return 0.0
+
+        loop = asyncio.get_event_loop()
+        try:
+            # Run blocking filesystem operation in executor to not block event loop
+            mtime = await asyncio.wait_for(
+                loop.run_in_executor(None, os.path.getmtime, self.config_path),
+                timeout=timeout,
+            )
+            return mtime
+        except asyncio.TimeoutError:
+            logging.warning(
+                f"Config file mtime check timed out after {timeout}s. "
+                f"Filesystem may be slow/unresponsive: {self.config_path}"
+            )
+            return 0.0
+        except OSError:
+            return 0.0
 
     async def _check_config_changes(self) -> None:
         """
         Periodically check for config file changes and reload if necessary.
+
+        Filesystem operations are protected with timeouts to prevent blocking
+        on slow/unresponsive network mounts (NFS, SMB, etc.).
         """
+        # Filesystem operation timeout to detect slow/hanging mounts
+        fs_timeout = 5.0
+
         while True:
             try:
                 await asyncio.sleep(self.check_interval)
 
-                if not self.config_path or not os.path.exists(self.config_path):
+                if not self.config_path:
                     continue
 
-                current_mtime = self._get_file_mtime()
+                # Check file existence with timeout protection
+                loop = asyncio.get_event_loop()
+                try:
+                    file_exists = await asyncio.wait_for(
+                        loop.run_in_executor(None, os.path.exists, self.config_path),
+                        timeout=fs_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    logging.warning(
+                        f"Config file existence check timed out after {fs_timeout}s. "
+                        f"Filesystem may be slow/unresponsive: {self.config_path}"
+                    )
+                    continue
+
+                if not file_exists:
+                    continue
+
+                current_mtime = await self._get_file_mtime_async(timeout=fs_timeout)
 
                 if self.last_modified and current_mtime > self.last_modified:
                     logging.info(
