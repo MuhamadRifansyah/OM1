@@ -5,7 +5,7 @@ import time
 import typing as T
 from concurrent.futures import ThreadPoolExecutor
 
-from actions.base import AgentAction
+from actions.base import AgentAction, Interface
 from llm.output_model import Action
 from runtime.single_mode.config import RuntimeConfig
 
@@ -22,7 +22,7 @@ class ActionOrchestrator:
     Note: It is very important that the actions do not block the event loop.
     """
 
-    promise_queue: T.List[asyncio.Task[T.Any]]
+    promise_queue: T.List[asyncio.Task[Interface]]
     _config: RuntimeConfig
     _connector_workers: int
     _connector_executor: ThreadPoolExecutor
@@ -100,15 +100,16 @@ class ActionOrchestrator:
                 logging.error(f"Error in connector {action.llm_label}: {e}")
                 time.sleep(0.1)
 
-    async def flush_promises(self) -> tuple[list[T.Any], list[asyncio.Task[T.Any]]]:
+    async def flush_promises(self) -> tuple[list[Interface], list[asyncio.Task[Interface]]]:
         """
         Flushes the promise queue by waiting for all tasks to complete.
         Returns the completed promises and any remaining pending promises.
 
         Returns
         -------
-        tuple[list[T.Any], list[asyncio.Task[T.Any]]]
-            A tuple containing a list of completed promise results and a list of pending promise tasks.
+        tuple[list[Interface], list[asyncio.Task[Interface]]]
+            A tuple containing a list of completed Interface objects from action execution
+            and a list of pending task objects.
         """
         if not self.promise_queue:
             return [], []
@@ -119,7 +120,22 @@ class ActionOrchestrator:
 
         self.promise_queue = []
 
-        return list(done), list(pending)
+        # Extract results from completed tasks, validating they are Interface objects
+        completed_results: list[Interface] = []
+        for task in done:
+            try:
+                result = task.result()
+                if isinstance(result, Interface):
+                    completed_results.append(result)
+                else:
+                    logging.warning(
+                        f"Action task returned unexpected type {type(result).__name__}, "
+                        f"expected Interface subclass"
+                    )
+            except Exception as e:
+                logging.error(f"Error extracting result from completed action task: {e}")
+
+        return completed_results, list(pending)
 
     async def promise(self, actions: list[Action]) -> None:
         """
@@ -220,7 +236,7 @@ class ActionOrchestrator:
 
     async def _promise_action_with_deps(
         self, agent_action: AgentAction, action: Action
-    ) -> T.Any:
+    ) -> Interface:
         """
         Execute an action after waiting for its dependencies.
 
@@ -233,8 +249,8 @@ class ActionOrchestrator:
 
         Returns
         -------
-        T.Any
-            The result of the action execution.
+        Interface
+            The Interface object (input side) that was passed to the connector.
         """
         action_label = action.type.lower()
         dependencies = self._action_dependencies.get(action_label, [])
@@ -313,7 +329,7 @@ class ActionOrchestrator:
             )
         return agent_action
 
-    async def _promise_action(self, agent_action: AgentAction, action: Action) -> T.Any:
+    async def _promise_action(self, agent_action: AgentAction, action: Action) -> Interface:
         """
         Promise a single action to its connector.
 
@@ -326,8 +342,8 @@ class ActionOrchestrator:
 
         Returns
         -------
-        T.Any
-            The result of the action execution.
+        Interface
+            The Interface object (input side) that was passed to the connector.
         """
         logging.debug(
             f"Calling action {agent_action.llm_label} with type {action.type.lower()} and argument {action.value}"
