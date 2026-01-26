@@ -5,8 +5,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, ConfigDict
 
-# Type variable bound to Interface for action result typing
-ActionResult = T.TypeVar("ActionResult", bound="Interface")
+
 
 IT = T.TypeVar("IT")
 OT = T.TypeVar("OT")
