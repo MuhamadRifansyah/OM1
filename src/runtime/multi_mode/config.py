@@ -13,6 +13,14 @@ from backgrounds.base import Background
 from inputs import load_input
 from inputs.base import Sensor
 from llm import LLM, load_llm
+from runtime.component_registry import (
+    validate_action_connector,
+    validate_action_name,
+    validate_background_type,
+    validate_input_type,
+    validate_llm_type,
+    validate_simulator_type,
+)
 from runtime.config import validate_config_schema
 from runtime.multi_mode.hook import (
     LifecycleHook,
@@ -355,6 +363,95 @@ class ModeSystemConfig:
         )
 
 
+def _validate_mode_config_components(raw_config: Dict[str, Any]) -> None:
+    """
+    Pre-validate all component references in a mode configuration.
+
+    Validates components at the global level and within each mode.
+
+    Parameters
+    ----------
+    raw_config : dict
+        The raw mode configuration dictionary
+
+    Raises
+    ------
+    ValueError
+        If any component type is not found
+    """
+    errors = []
+
+    # Validate global LLM if present
+    if "cortex_llm" in raw_config:
+        llm_type = raw_config["cortex_llm"].get("type")
+        if llm_type:
+            try:
+                validate_llm_type(llm_type)
+            except ValueError as e:
+                errors.append(f"cortex_llm: {str(e)}")
+
+    # Validate components in each mode
+    for mode_name, mode_config in raw_config.get("modes", {}).items():
+        # Validate mode inputs
+        for idx, input_config in enumerate(mode_config.get("inputs", [])):
+            input_type = input_config.get("type")
+            if input_type:
+                try:
+                    validate_input_type(input_type)
+                except ValueError as e:
+                    errors.append(f"modes[{mode_name}].inputs[{idx}]: {str(e)}")
+
+        # Validate mode simulators
+        for idx, sim_config in enumerate(mode_config.get("simulators", [])):
+            sim_type = sim_config.get("type")
+            if sim_type:
+                try:
+                    validate_simulator_type(sim_type)
+                except ValueError as e:
+                    errors.append(f"modes[{mode_name}].simulators[{idx}]: {str(e)}")
+
+        # Validate mode actions
+        for idx, action_config in enumerate(mode_config.get("actions", [])):
+            action_name = action_config.get("name")
+            connector_name = action_config.get("connector")
+            if action_name:
+                try:
+                    validate_action_name(action_name)
+                except ValueError as e:
+                    errors.append(
+                        f"modes[{mode_name}].actions[{idx}]: {str(e)}"
+                    )
+            if action_name and connector_name:
+                try:
+                    validate_action_connector(action_name, connector_name)
+                except ValueError as e:
+                    errors.append(
+                        f"modes[{mode_name}].actions[{idx}]: {str(e)}"
+                    )
+
+        # Validate mode backgrounds
+        for idx, bg_config in enumerate(mode_config.get("backgrounds", [])):
+            bg_type = bg_config.get("type")
+            if bg_type:
+                try:
+                    validate_background_type(bg_type)
+                except ValueError as e:
+                    errors.append(f"modes[{mode_name}].backgrounds[{idx}]: {str(e)}")
+
+        # Validate mode LLM if present
+        if "cortex_llm" in mode_config:
+            llm_type = mode_config["cortex_llm"].get("type")
+            if llm_type:
+                try:
+                    validate_llm_type(llm_type)
+                except ValueError as e:
+                    errors.append(f"modes[{mode_name}].cortex_llm: {str(e)}")
+
+    if errors:
+        error_message = "Mode configuration validation failed:\n" + "\n".join(errors)
+        raise ValueError(error_message)
+
+
 def load_mode_config(
     config_name: str, mode_source_path: Optional[str] = None
 ) -> ModeSystemConfig:
@@ -393,6 +490,9 @@ def load_mode_config(
     config_version = raw_config.get("version")
     verify_runtime_version(config_version, config_name)
     validate_config_schema(raw_config)
+
+    # Pre-validate all component references before loading
+    _validate_mode_config_components(raw_config)
 
     g_robot_ip = raw_config.get("robot_ip", None)
     if g_robot_ip is None or g_robot_ip == "" or g_robot_ip == "192.168.0.241":

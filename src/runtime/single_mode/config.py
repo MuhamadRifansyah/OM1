@@ -12,6 +12,14 @@ from backgrounds.base import Background
 from inputs import load_input
 from inputs.base import Sensor
 from llm import LLM, load_llm
+from runtime.component_registry import (
+    validate_action_connector,
+    validate_action_name,
+    validate_background_type,
+    validate_input_type,
+    validate_llm_type,
+    validate_simulator_type,
+)
 from runtime.config import validate_config_schema
 from runtime.robotics import load_unitree
 from runtime.version import verify_runtime_version
@@ -95,6 +103,81 @@ class RuntimeConfig:
         return load_config(config_name)
 
 
+def _validate_config_components(raw_config: Dict) -> None:
+    """
+    Pre-validate all component references in the configuration.
+
+    This function checks that all component types exist before attempting to load them,
+    providing clear error messages with available alternatives.
+
+    Parameters
+    ----------
+    raw_config : dict
+        The raw configuration dictionary
+
+    Raises
+    ------
+    ValueError
+        If any component type is not found
+    """
+    errors = []
+
+    # Validate inputs
+    for idx, input_config in enumerate(raw_config.get("agent_inputs", [])):
+        input_type = input_config.get("type")
+        if input_type:
+            try:
+                validate_input_type(input_type)
+            except ValueError as e:
+                errors.append(f"agent_inputs[{idx}]: {str(e)}")
+
+    # Validate simulators
+    for idx, sim_config in enumerate(raw_config.get("simulators", [])):
+        sim_type = sim_config.get("type")
+        if sim_type:
+            try:
+                validate_simulator_type(sim_type)
+            except ValueError as e:
+                errors.append(f"simulators[{idx}]: {str(e)}")
+
+    # Validate actions
+    for idx, action_config in enumerate(raw_config.get("agent_actions", [])):
+        action_name = action_config.get("name")
+        connector_name = action_config.get("connector")
+        if action_name:
+            try:
+                validate_action_name(action_name)
+            except ValueError as e:
+                errors.append(f"agent_actions[{idx}]: {str(e)}")
+        if action_name and connector_name:
+            try:
+                validate_action_connector(action_name, connector_name)
+            except ValueError as e:
+                errors.append(f"agent_actions[{idx}]: {str(e)}")
+
+    # Validate backgrounds
+    for idx, bg_config in enumerate(raw_config.get("backgrounds", [])):
+        bg_type = bg_config.get("type")
+        if bg_type:
+            try:
+                validate_background_type(bg_type)
+            except ValueError as e:
+                errors.append(f"backgrounds[{idx}]: {str(e)}")
+
+    # Validate LLM
+    llm_config = raw_config.get("cortex_llm", {})
+    llm_type = llm_config.get("type")
+    if llm_type:
+        try:
+            validate_llm_type(llm_type)
+        except ValueError as e:
+            errors.append(f"cortex_llm: {str(e)}")
+
+    if errors:
+        error_message = "Configuration validation failed:\n" + "\n".join(errors)
+        raise ValueError(error_message)
+
+
 def load_config(
     config_name: str, config_source_path: Optional[str] = None
 ) -> RuntimeConfig:
@@ -145,6 +228,9 @@ def load_config(
     config_version = raw_config.get("version")
     verify_runtime_version(config_version, config_name)
     validate_config_schema(raw_config)
+
+    # Pre-validate all component references before loading
+    _validate_config_components(raw_config)
 
     g_robot_ip = raw_config.get("robot_ip", None)
     if g_robot_ip is None or g_robot_ip == "" or g_robot_ip == "192.168.0.241":
