@@ -10,6 +10,13 @@ import json5
 import typer
 from jsonschema import ValidationError, validate
 
+from runtime.component_registry import (
+    discover_available_actions,
+    discover_available_backgrounds,
+    discover_available_inputs,
+    discover_available_llms,
+    discover_available_simulators,
+)
 from runtime.multi_mode.config import load_mode_config
 
 app = typer.Typer()
@@ -144,6 +151,66 @@ def list_configs() -> None:
         print("-" * 32)
         for config_name, display_name in sorted(configs):
             print(f"• {config_name} - {display_name}")
+
+
+@app.command()
+def list_components() -> None:
+    """
+    List all available component types (inputs, actions, simulators, backgrounds, LLMs).
+
+    This is useful for debugging configuration issues and discovering what components
+    are available for use in your configuration files.
+    """
+    print("-" * 60)
+    print("Available Components in OM1")
+    print("-" * 60)
+    print()
+
+    inputs = discover_available_inputs()
+    if inputs:
+        print("INPUT SENSORS:")
+        print("-" * 40)
+        for name in sorted(inputs.keys()):
+            print(f"  • {name}")
+        print()
+
+    actions = discover_available_actions()
+    if actions:
+        print("ACTIONS:")
+        print("-" * 40)
+        for name in sorted(actions.keys()):
+            print(f"  • {name}")
+        print()
+
+    simulators = discover_available_simulators()
+    if simulators:
+        print("SIMULATORS:")
+        print("-" * 40)
+        for name in sorted(simulators.keys()):
+            print(f"  • {name}")
+        print()
+
+    backgrounds = discover_available_backgrounds()
+    if backgrounds:
+        print("BACKGROUNDS:")
+        print("-" * 40)
+        for name in sorted(backgrounds.keys()):
+            print(f"  • {name}")
+        print()
+
+    llms = discover_available_llms()
+    if llms:
+        print("LLM PROVIDERS:")
+        print("-" * 40)
+        for name in sorted(llms.keys()):
+            print(f"  • {name}")
+        print()
+
+    print("-" * 60)
+    print("Use these component names in your configuration files.")
+    print()
+
+
 
 
 @app.command()
