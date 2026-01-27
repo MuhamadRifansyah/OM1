@@ -8,6 +8,12 @@ import json5
 from actions.orchestrator import ActionOrchestrator
 from backgrounds.orchestrator import BackgroundOrchestrator
 from fuser import Fuser
+from runtime.error_context import (
+    ErrorContext,
+    log_exception_with_context,
+    handle_exception_context,
+    ExceptionContextManager,
+)
 from inputs.orchestrator import InputOrchestrator
 from providers.config_provider import ConfigProvider
 from providers.io_provider import IOProvider
@@ -128,7 +134,14 @@ class CortexRuntime:
             self.config_name + ".json5",
         )
 
-        try:
+        with handle_exception_context(
+            logger=logging.getLogger(__name__),
+            context=ErrorContext.FILE_OPERATION,
+            operation="Copy configuration to runtime config file",
+            component="CortexRuntime",
+            details={"source_config": self.config_name, "dest_path": runtime_config_path},
+            reraise=False,
+        ):
             if os.path.exists(config_path):
                 with open(config_path, "r") as f:
                     raw = json5.load(f)
@@ -140,8 +153,6 @@ class CortexRuntime:
                 logging.debug(f"Wrote runtime config to: {runtime_config_path}")
             else:
                 logging.warning(f"Config not found: {config_path}")
-        except Exception as e:
-            logging.error(f"Failed to create runtime config file: {e}")
 
         return str(runtime_config_path)
 
@@ -195,7 +206,14 @@ class CortexRuntime:
                         break
 
                 except Exception as e:
-                    logging.error(f"Error in orchestrator tasks: {e}")
+                    log_exception_with_context(
+                        logger=logging.getLogger(__name__),
+                        context=ErrorContext.RUNTIME_EXECUTION,
+                        operation="Orchestrator task execution",
+                        exc=e,
+                        component="CortexRuntime",
+                        details={"config": self.config_name},
+                    )
                     await asyncio.sleep(1.0)
 
         except Exception as e:

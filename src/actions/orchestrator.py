@@ -8,6 +8,12 @@ from concurrent.futures import ThreadPoolExecutor
 from actions.base import AgentAction
 from llm.output_model import Action
 from runtime.single_mode.config import RuntimeConfig
+from runtime.error_context import (
+    ErrorContext,
+    log_exception_with_context,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class ActionOrchestrator:
@@ -97,7 +103,14 @@ class ActionOrchestrator:
             try:
                 action.connector.tick()
             except Exception as e:
-                logging.error(f"Error in connector {action.llm_label}: {e}")
+                log_exception_with_context(
+                    logger=logger,
+                    context=ErrorContext.CONNECTOR_EXECUTION,
+                    operation="Connector tick execution",
+                    exc=e,
+                    component=action.llm_label,
+                    details={"action_type": action.llm_label},
+                )
                 time.sleep(0.1)
 
     async def flush_promises(self) -> tuple[list[T.Any], list[asyncio.Task[T.Any]]]:

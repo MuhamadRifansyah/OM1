@@ -1,4 +1,12 @@
 import logging
+from .error_context import (
+    ErrorContext,
+    log_exception_with_context,
+    ContextualException,
+    ContextInfo,
+)
+
+logger = logging.getLogger(__name__)
 
 
 def load_unitree(unitree_ethernet: str):
@@ -20,12 +28,12 @@ def load_unitree(unitree_ethernet: str):
 
     Raises
     ------
-    Exception
+    ContextualException
         If initialization of the Unitree Ethernet channel fails.
 
     """
     if unitree_ethernet is not None:
-        logging.info(
+        logger.info(
             f"Using {unitree_ethernet} as the Unitree Network Ethernet Adapter"
         )
 
@@ -34,6 +42,24 @@ def load_unitree(unitree_ethernet: str):
         try:
             ChannelFactoryInitialize(0, unitree_ethernet)
         except Exception as e:
-            logging.error(f"Failed to initialize Unitree Ethernet channel: {e}")
-            # raise e
-        logging.info("Booting Unitree and CycloneDDS")
+            log_exception_with_context(
+                logger=logger,
+                context=ErrorContext.NETWORK_COMMUNICATION,
+                operation="Initialize Unitree Ethernet channel",
+                exc=e,
+                component="Unitree",
+                details={"adapter": unitree_ethernet},
+            )
+            context_info = ContextInfo(
+                error_context=ErrorContext.NETWORK_COMMUNICATION,
+                operation="Initialize Unitree Ethernet channel",
+                component="Unitree",
+                details={"adapter": unitree_ethernet},
+                parent_exception=e,
+            )
+            raise ContextualException(
+                context=context_info,
+                message=f"Failed to initialize Unitree on adapter {unitree_ethernet}",
+                cause=e,
+            ) from e
+        logger.info("Booting Unitree and CycloneDDS")
