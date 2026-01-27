@@ -228,8 +228,12 @@ class UnitreeRealSenseDevVideoStream(VideoStream):
                     capture_output=True,
                     text=True,
                     shell=False,
+                    timeout=3.0,
                 )
                 formats = result.stdout
+            except subprocess.TimeoutExpired:
+                logger.warning("Timeout running v4l2-ctl for device '%s'", device)
+                continue
             except Exception as e:
                 logger.exception(
                     "Failed to run v4l2-ctl for device '%s': %s", device, e
