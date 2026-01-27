@@ -1,7 +1,9 @@
 import base64
 import glob
 import logging
+import queue
 import subprocess
+import threading
 import time
 from typing import Callable, List, Optional, Tuple
 
@@ -56,6 +58,37 @@ class UnitreeRealSenseDevVideoStream(VideoStream):
             resolution=resolution,
             jpeg_quality=jpeg_quality,
         )
+        self._frame_queue: queue.Queue = queue.Queue(maxsize=2)
+        self._sender_thread: Optional[threading.Thread] = None
+
+    def start(self):
+        """Start the video stream and the sender thread."""
+        super().start()
+        if self._sender_thread is None or not self._sender_thread.is_alive():
+            self._sender_thread = threading.Thread(target=self._send_loop, daemon=True)
+            self._sender_thread.start()
+
+    def stop(self):
+        """Stop the video stream and the sender thread."""
+        super().stop()
+        if self._sender_thread and self._sender_thread.is_alive():
+            self._sender_thread.join(timeout=1.0)
+
+    def _send_loop(self):
+        """Loop to send frames from the queue to callbacks."""
+        while self.running:
+            try:
+                frame_data = self._frame_queue.get(timeout=0.1)
+                if self.frame_callbacks:
+                    for frame_callback in self.frame_callbacks:
+                        try:
+                            frame_callback(frame_data)
+                        except Exception as e:
+                            logger.error("Error in frame callback: %s", e)
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logger.error("Error in sender loop: %s", e)
 
     def on_video(self):
         """
@@ -144,9 +177,10 @@ class UnitreeRealSenseDevVideoStream(VideoStream):
                     logger.exception("Error encoding frame: %s", e)
                     continue
 
-                if self.frame_callbacks:
-                    for frame_callback in self.frame_callbacks:
-                        frame_callback(frame_data)
+                try:
+                    self._frame_queue.put_nowait(frame_data)
+                except queue.Full:
+                    pass
 
                 time.sleep(self.frame_delay)
         except Exception as e:
