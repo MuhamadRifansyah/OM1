@@ -1,6 +1,7 @@
 import base64
 import glob
 import logging
+import shutil
 import subprocess
 import time
 from typing import Callable, List, Optional, Tuple
@@ -216,6 +217,16 @@ class UnitreeRealSenseDevVideoStream(VideoStream):
             video_devices = sorted(glob.glob("/dev/video*"))
         except Exception as e:
             logger.exception("Failed to list video devices: %s", e)
+            return None
+
+        # Check if v4l2-ctl is installed
+        if shutil.which("v4l2-ctl") is None:
+            logger.warning(
+                "v4l2-ctl not found. Falling back to simple device enumeration."
+            )
+            for device in video_devices:
+                if device not in skip_devices:
+                    return device
             return None
 
         for device in video_devices:
