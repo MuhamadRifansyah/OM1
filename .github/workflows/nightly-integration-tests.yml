@@ -2,7 +2,6 @@ name: Run Nightly Integration Tests
 
 env:
   OM1_API_KEY: ${{ secrets.OM1_API_KEY }}
-  SLACK_WEBHOOK_URL: ${{ secrets.ONCALL_SLACK_WEBHOOK_URL }}
 
 on:
   schedule:
@@ -124,8 +123,7 @@ jobs:
           EOF
 
       - name: Notify Slack on failure
-        if: failure() && github.event_name == 'schedule' && env.SLACK_WEBHOOK_URL != ''
-        continue-on-error: true
+        if: failure() && github.event_name == 'schedule' && github.event.pull_request.head.repo.fork != true
         run: |
           curl -X POST -H 'Content-type: application/json' \
             --data "{
@@ -138,8 +136,7 @@ jobs:
             ${{ secrets.ONCALL_SLACK_WEBHOOK_URL }}
 
       - name: Notify Slack on success
-        if: success() && github.event_name == 'schedule' && env.SLACK_WEBHOOK_URL != ''
-        continue-on-error: true
+        if: success() && github.event_name == 'schedule' && github.event.pull_request.head.repo.fork != true
         run: |
           curl -X POST -H 'Content-type: application/json' \
             --data "{
