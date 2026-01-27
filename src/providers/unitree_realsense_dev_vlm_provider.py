@@ -1,6 +1,7 @@
 import base64
 import glob
 import logging
+import os
 import subprocess
 import time
 from typing import Callable, List, Optional, Tuple
@@ -56,6 +57,7 @@ class UnitreeRealSenseDevVideoStream(VideoStream):
             resolution=resolution,
             jpeg_quality=jpeg_quality,
         )
+        self._known_working_devices: List[str] = []
 
     def on_video(self):
         """
@@ -212,6 +214,13 @@ class UnitreeRealSenseDevVideoStream(VideoStream):
         if skip_devices is None:
             skip_devices = set()
 
+        # Check known working devices first to avoid expensive scan
+        for device in self._known_working_devices:
+            if device in skip_devices:
+                continue
+            if os.path.exists(device):
+                return device
+
         try:
             video_devices = sorted(glob.glob("/dev/video*"))
         except Exception as e:
@@ -241,6 +250,8 @@ class UnitreeRealSenseDevVideoStream(VideoStream):
                     logger.info(
                         "Found RGB device at %s with formats: %s", device, formats
                     )
+                    if device not in self._known_working_devices:
+                        self._known_working_devices.append(device)
                     return device
             except Exception as e:
                 logger.exception(
