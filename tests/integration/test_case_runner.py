@@ -109,6 +109,22 @@ def mock_confige_provider_components():
         yield
 
 
+@pytest.fixture
+async def llm_client():
+    """Fixture to provide an OpenAI client for LLM evaluation."""
+    # Try to get the API key from environment variable
+    api_key = os.environ.get("OM1_API_KEY")
+
+    if not api_key:
+        yield None
+    else:
+        client = openai.AsyncClient(
+            base_url="https://api.openmind.org/api/core/openai", api_key=api_key
+        )
+        yield client
+        await client.close()
+
+
 # Movement types that should be considered movement commands
 VLM_MOVE_TYPES = {
     "stand still",
@@ -728,6 +744,7 @@ async def evaluate_with_llm(
     expected_output: Dict[str, Any],
     api_key: str,
     config: Optional[Dict[str, Any]] = None,
+    llm_client: Optional[openai.AsyncClient] = None,
 ) -> Tuple[float, str]:
     """
     Evaluate test results using LLM-based comparison.
@@ -742,6 +759,8 @@ async def evaluate_with_llm(
         API key for the LLM evaluation
     config : Dict[str, Any], optional
         Test case configuration for context-aware evaluation
+    llm_client : Optional[openai.AsyncClient]
+        The LLM client to use for evaluation
 
     Returns
     -------
@@ -781,6 +800,10 @@ async def evaluate_with_llm(
     # If neither movement nor keywords nor emotion are specified, return perfect score
     if not has_movement and not has_keywords and not has_emotion:
         return 1.0, "No specific evaluation criteria specified - test passes by default"
+
+    if llm_client is None:
+        logging.warning("No API key found for LLM evaluation, using mock score")
+        return 0.0, "No API key provided for LLM evaluation"
 
     # Get appropriate movement types for this test case
     movement_types = get_movement_types_for_config(config) if config else VLM_MOVE_TYPES
@@ -850,6 +873,7 @@ async def evaluate_with_llm(
     try:
         # Call the OpenAI API
         response = await _llm_client.chat.completions.create(
+        response = await llm_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": system_prompt},
@@ -888,6 +912,7 @@ async def evaluate_test_results(
     expected: Dict[str, Any],
     api_key: str,
     config: Optional[Dict[str, Any]] = None,
+    llm_client: Optional[openai.AsyncClient] = None,
 ) -> Tuple[bool, float, str]:
     """
     Evaluate test results against expected output using both heuristic and LLM-based evaluation.
@@ -902,6 +927,8 @@ async def evaluate_test_results(
         API key for the LLM evaluation
     config : Dict[str, Any], optional
         Test case configuration for context-aware evaluation
+    llm_client : Optional[openai.AsyncClient]
+        The LLM client to use for evaluation
 
     Returns
     -------
@@ -1027,6 +1054,7 @@ async def evaluate_test_results(
     # Get LLM-based evaluation with config context
     llm_score, llm_reasoning = await evaluate_with_llm(
         results, expected, api_key, config
+        results, expected, api_key, config, llm_client
     )
 
     # Combine scores (equal weighting)
@@ -1204,6 +1232,7 @@ def get_test_cases_by_tags(tags: Optional[List[str]] = None) -> List[Path]:
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_from_config(test_case_path: Path):
+async def test_from_config(test_case_path: Path, llm_client):
     """
     Run a test based on a configuration file.
 
@@ -1211,6 +1240,8 @@ async def test_from_config(test_case_path: Path):
     ----------
     test_case_path : Path
         Path to the test case configuration file
+    llm_client : fixture
+        The LLM client fixture
     """
     # Reset mock providers to ensure test isolation
     image_provider = get_image_provider()
@@ -1251,6 +1282,7 @@ async def test_from_config(test_case_path: Path):
         # Evaluate results
         passed, score, message = await evaluate_test_results(
             results, config["expected"], config["api_key"], config
+            results, config["expected"], config["api_key"], config, llm_client
         )
 
         # Log detailed results
@@ -1282,6 +1314,7 @@ async def test_from_config(test_case_path: Path):
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_specific_case():
+async def test_specific_case(llm_client):
     """Run a specific test case by name for debugging."""
     test_name = os.environ.get("TEST_CASE", "coco_indoor_detection")
 
@@ -1298,6 +1331,7 @@ async def test_specific_case():
 
     # Now run the test
     await test_from_config(test_case_path)
+    await test_from_config(test_case_path, llm_client)
 
 
 # Add cleanup for pytest
