@@ -586,6 +586,9 @@ def _check_class_in_dir(directory: str, class_name: str) -> bool:
     """
     Check if a class exists in any .py file in the given directory using AST.
 
+    This verifies that the class is either defined in the file, imported
+    into the file's namespace, or assigned at the top level.
+
     Parameters
     ----------
     directory : str
@@ -610,6 +613,19 @@ def _check_class_in_dir(directory: str, class_name: str) -> bool:
                     for node in tree.body:
                         if isinstance(node, ast.ClassDef) and node.name == class_name:
                             return True
+
+                        # Check for re-exports (imports)
+                        if isinstance(node, (ast.Import, ast.ImportFrom)):
+                            for alias in node.names:
+                                exported_name = alias.asname if alias.asname else alias.name
+                                if exported_name == class_name:
+                                    return True
+
+                        # Check for dynamic assignment (MyClass = ...)
+                        if isinstance(node, ast.Assign):
+                            for target in node.targets:
+                                if isinstance(target, ast.Name) and target.id == class_name:
+                                    return True
             except Exception:
                 continue
     return False
