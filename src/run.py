@@ -3,6 +3,7 @@ import logging
 import multiprocessing as mp
 import os
 import shutil
+import traceback
 from typing import Optional, Tuple
 
 import dotenv
@@ -35,11 +36,15 @@ def setup_config_file(config_name: Optional[str]) -> Tuple[str, str]:
         )
 
         if not os.path.exists(runtime_config_path):
-            logging.error(
-                f"Default runtime configuration file not found: {runtime_config_path}"
+            typer.secho(
+                f"Default runtime configuration file not found: {runtime_config_path}",
+                fg="red",
+                err=True,
             )
-            logging.error(
-                "Please provide a config_name or ensure .runtime.json5 exists in config/memory/"
+            typer.secho(
+                "Please provide a config_name or ensure .runtime.json5 exists in config/memory/",
+                fg="red",
+                err=True,
             )
             raise typer.Exit(1)
 
@@ -49,8 +54,8 @@ def setup_config_file(config_name: Optional[str]) -> Tuple[str, str]:
         )
 
         shutil.copy2(runtime_config_path, config_path)
-        logging.info("Using default runtime configuration from memory folder")
-        logging.info(
+        typer.echo("Using default runtime configuration from memory folder")
+        typer.echo(
             f"Copied config/memory/.runtime.json5 to config/{config_name}.json5 for system compatibility"
         )
     else:
@@ -122,18 +127,26 @@ def start(
             )
             logging.info(f"Starting OM1 with standard configuration: {config_name}")
 
-        if hot_reload:
-            logging.info(
-                f"Hot-reload enabled (check interval: {check_interval} seconds)"
-            )
-
-        asyncio.run(runtime.run())
-
     except FileNotFoundError:
         logging.error(f"Configuration file not found: {config_path}")
         raise typer.Exit(1)
     except Exception as e:
         logging.error(f"Error loading configuration: {e}")
+        logging.debug(traceback.format_exc())
+        raise typer.Exit(1)
+
+    if hot_reload:
+        logging.info(
+            f"Hot-reload enabled (check interval: {check_interval} seconds)"
+        )
+
+    try:
+        asyncio.run(runtime.run())
+    except KeyboardInterrupt:
+        logging.info("OM1 stopped by user.")
+    except Exception as e:
+        logging.error(f"Runtime error: {e}")
+        logging.debug(traceback.format_exc())
         raise typer.Exit(1)
 
 
