@@ -22,7 +22,10 @@ except ImportError:
         Placeholder for ChannelSubscriber when Unitree SDK is not installed.
         """
 
-        def __init__(self):
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def Init(self, *args, **kwargs):
             pass
 
     class LowState_:
@@ -30,7 +33,7 @@ except ImportError:
         Placeholder for LowState_ when Unitree SDK is not installed.
         """
 
-        def __init__(self):
+        def __init__(self, *args, **kwargs):
             pass
 
 
@@ -99,6 +102,7 @@ class UnitreeGo2Battery(FuserInput[UnitreeGo2BatteryConfig, List[float]]):
         self.battery_voltage = 0.0
         self.battery_amperes = 0.0
         self.battery_t = 0
+        self.last_msg_time = 0.0
 
         # Simple description of sensor output to help LLM understand its importance and utility
         self.descriptor_for_LLM = "Energy Levels"
@@ -114,6 +118,7 @@ class UnitreeGo2Battery(FuserInput[UnitreeGo2BatteryConfig, List[float]]):
         """
         try:
             self.low_state = msg
+            self.last_msg_time = time.time()
             self.battery_percentage = round(float(msg.bms_state.soc), 2)  # type: ignore
             self.battery_voltage = round(float(msg.power_v), 2)  # type: ignore
             self.battery_amperes = round(float(msg.power_a), 2)  # type: ignore
@@ -153,15 +158,21 @@ class UnitreeGo2Battery(FuserInput[UnitreeGo2BatteryConfig, List[float]]):
             list of floats
         """
         await asyncio.sleep(2.0)
-        await self.report_status()
+        try:
+            await self.report_status()
+        except Exception as e:
+            logging.warning(f"Failed to report battery status: {e}")
 
-        logging.info(
-            (
-                f"Battery percentage: {self.battery_percentage} "
-                f"voltage: {self.battery_voltage} "
-                f"amperes: {self.battery_amperes}"
+        if time.time() - self.last_msg_time < 10.0:
+            logging.info(
+                (
+                    f"Battery percentage: {self.battery_percentage} "
+                    f"voltage: {self.battery_voltage} "
+                    f"amperes: {self.battery_amperes}"
+                )
             )
-        )
+        else:
+            logging.debug("Battery data stale or unavailable")
 
         return [self.battery_percentage, self.battery_voltage, self.battery_amperes]
 
@@ -179,6 +190,10 @@ class UnitreeGo2Battery(FuserInput[UnitreeGo2BatteryConfig, List[float]]):
         Optional[Message]
             Timestamped message containing description
         """
+        # Prevent false alarms if data is stale or never received
+        if time.time() - self.last_msg_time > 10.0:
+            return None
+
         battery_percentage = raw_input[0]
         logging.debug(f"Battery percentage: {battery_percentage}")
 
