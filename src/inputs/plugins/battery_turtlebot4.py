@@ -72,6 +72,7 @@ class TurtleBot4Battery(FuserInput[TurtleBot4BatteryConfig, List[str]]):
         self.battery_temperature = 0
         self.battery_timestamp = time.time()
         self.is_docked = False
+        self.last_update_time = 0.0
 
         logging.info("Opening Zenoh TurtleBot4 session...")
         self.z = open_zenoh_session()
@@ -109,6 +110,7 @@ class TurtleBot4Battery(FuserInput[TurtleBot4BatteryConfig, List[str]]):
         self.battery_voltage = battery.voltage
         self.battery_temperature = round(battery.temperature, 2)
         self.battery_timestamp = battery.header.stamp.sec
+        self.last_update_time = time.time()
 
         if self.battery_percentage < 5:
             self.battery_status = (
@@ -162,7 +164,15 @@ class TurtleBot4Battery(FuserInput[TurtleBot4BatteryConfig, List[str]]):
         List[str]
         """
         await asyncio.sleep(2.0)
-        await self.report_status()
+
+        # Check for stale data (older than 30s) or no data received yet
+        if time.time() - self.last_update_time > 30.0:
+            return []
+
+        try:
+            await self.report_status()
+        except Exception as e:
+            logging.warning(f"Failed to report TB4 battery status: {e}")
 
         logging.info(
             f"TB4 batt percent:{self.battery_percentage} low?: {self.battery_status}"
