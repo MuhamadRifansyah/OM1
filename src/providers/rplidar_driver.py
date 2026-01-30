@@ -248,10 +248,16 @@ class RPDriver(object):
         is_single = _b2i(descriptor[-2]) == 0
         return _b2i(descriptor[2]), is_single, _b2i(descriptor[-1])
 
+    def _bytes_available(self):
+        """Returns the number of bytes available in the input buffer."""
+        if hasattr(self._serial, "in_waiting"):
+            return self._serial.in_waiting
+        return self._serial.inWaiting()
+
     def _read_response(self, dsize):
         """Reads response packet with length of `dsize` bytes."""
         self.logger.debug("Trying to read response: %d bytes", dsize)
-        while self._serial.in_waiting < dsize:
+        while self._bytes_available() < dsize:
             time.sleep(0.001)
         data = self._serial.read(dsize)
         self.logger.debug("Received data: %s", _showhex(data))
@@ -265,7 +271,7 @@ class RPDriver(object):
         dict
             Dictionary with the sensor information
         """
-        if self._serial.in_waiting > 0:
+        if self._bytes_available() > 0:
             self.clean_input()
             time.sleep(0.5)
         self._send_cmd(GET_INFO_BYTE)
@@ -302,7 +308,7 @@ class RPDriver(object):
         error_code : int
             The related error code that caused a warning/error.
         """
-        if self._serial.in_waiting > 0:
+        if self._bytes_available() > 0:
             self.clean_input()
             time.sleep(0.5)
         self.logger.info("Asking for health")
@@ -424,7 +430,7 @@ class RPDriver(object):
             dsize = self.scanning[1]
 
             if max_buf_meas:
-                data_in_buf = self._serial.in_waiting
+                data_in_buf = self._bytes_available()
                 if data_in_buf > max_buf_meas:
                     self.logger.warning(
                         "Too many bytes in the input buffer: %d/%d. "
