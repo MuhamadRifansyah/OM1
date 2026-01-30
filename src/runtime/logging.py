@@ -57,8 +57,7 @@ def setup_logging(
     logging.getLogger().handlers.clear()
 
     formatter = logging.Formatter(
-        fmt="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        fmt="%(asctime)s - %(levelname)s - %(message)s", datefmt="%Y-%m-%d %H:%M:%S"
     )
 
     console_handler = logging.StreamHandler()
@@ -80,7 +79,6 @@ def setup_logging(
         handlers.append(file_handler)
 
     logging.basicConfig(level=level, handlers=handlers)
-    logging.captureWarnings(True)
 
 
 def get_logging_config() -> LoggingConfig:
