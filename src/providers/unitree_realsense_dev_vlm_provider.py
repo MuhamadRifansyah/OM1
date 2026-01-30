@@ -215,12 +215,25 @@ class UnitreeRealSenseDevVideoStream(VideoStream):
             skip_devices = set()
 
         # Check known working devices first to avoid expensive scan
+        # Phase 1: Check known working devices first
         for device in self._known_working_devices:
             if device in skip_devices:
                 continue
-            if os.path.exists(device):
-                return device
 
+            if not os.path.exists(device):
+                logger.debug("Cached device %s not found", device)
+                continue
+
+            cap = cv2.VideoCapture(device)
+            try:
+                if cap.isOpened():
+                    return device
+            finally:
+                cap.release()
+
+            logger.debug("Cached device %s failed to open", device)
+
+        # Phase 2: Full device scan
         try:
             video_devices = sorted(glob.glob("/dev/video*"))
         except Exception as e:
@@ -258,6 +271,7 @@ class UnitreeRealSenseDevVideoStream(VideoStream):
                     "Error processing formats for device %s: %s", device, e
                 )
 
+        # Phase 3: No device found
         logger.warning("No RGB device found")
         return None
 
