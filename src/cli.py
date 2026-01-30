@@ -252,10 +252,10 @@ def validate_config(
         _check_api_key(raw_config, verbose)
 
         # Success message
-        print()
-        print("=" * 50)
+        print(file=sys.stderr)
+        print("=" * 50, file=sys.stderr)
         print("Configuration is valid!")
-        print("=" * 50)
+        print("=" * 50, file=sys.stderr)
 
         if verbose:
             _print_config_summary(raw_config, is_multi_mode)
