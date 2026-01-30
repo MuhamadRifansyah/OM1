@@ -104,6 +104,11 @@ class ConfigProvider:
         try:
             new_config = json5.loads(config_str)
 
+            if not isinstance(new_config, dict):
+                raise ValueError(
+                    f"Invalid configuration structure: Expected 'dict', got '{type(new_config).__name__}'"
+                )
+
             temp_path = self.config_path + ".tmp"
             with open(temp_path, "w") as f:
                 json.dump(new_config, f, indent=2)
@@ -173,7 +178,15 @@ class ConfigProvider:
                 return {}
 
             with open(self.config_path, "r") as f:
-                return json5.load(f)
+                config = json5.load(f)
+
+            if not isinstance(config, dict):
+                logging.error(
+                    f"ConfigProvider: Invalid config structure in {self.config_path}. "
+                    f"Expected dict, got {type(config).__name__}"
+                )
+                return {}
+            return config
 
         except Exception as e:
             logging.error(f"Failed to read config file {self.config_path}: {e}")
@@ -188,14 +201,6 @@ class ConfigProvider:
             return
 
         self.running = False
-
-        if self.config_request_subscriber:
-            self.config_request_subscriber.undeclare()
-            self.config_request_subscriber = None
-
-        if self.config_response_publisher:
-            self.config_response_publisher.undeclare()
-            self.config_response_publisher = None
 
         if self.session:
             self.session.close()
