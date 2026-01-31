@@ -191,7 +191,8 @@ class UnitreeGo2Battery(FuserInput[UnitreeGo2BatteryConfig, List[float]]):
             Timestamped message containing description
         """
         # Prevent false alarms if data is stale or never received
-        if time.time() - self.last_msg_time > 10.0:
+        if self.last_msg_time > 0 and time.time() - self.last_msg_time > 10.0:
+            logging.debug("Battery data stale, skipping alert generation")
             return None
 
         battery_percentage = raw_input[0]
