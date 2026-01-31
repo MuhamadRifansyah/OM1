@@ -45,7 +45,34 @@ class ZenohListenerProvider:
             The function that will be called with each incoming Zenoh sample.
         """
         if self.session is not None:
-            self.session.declare_subscriber(self.sub_topic, message_callback)
+            if message_callback is None:
+                return
+
+            def _safe_callback(sample: zenoh.Sample):
+                try:
+                    if (
+                        sample is None
+                        or not hasattr(sample, "payload")
+                        or sample.payload is None
+                        or len(sample.payload.to_bytes()) == 0
+                    ):
+                        logging.debug(
+                            "[%s] Received empty payload on topic: %s",
+                            self.__class__.__name__,
+                            self.sub_topic,
+                        )
+                        return
+                    message_callback(sample)
+                except Exception as e:
+                    logging.warning(
+                        "[%s] Error in callback for topic %s: %s",
+                        self.__class__.__name__,
+                        self.sub_topic,
+                        e,
+                        exc_info=True,
+                    )
+
+            self.session.declare_subscriber(self.sub_topic, _safe_callback)
         else:
             logging.error("Cannot register callback; Zenoh session is not available.")
 
