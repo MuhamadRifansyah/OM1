@@ -213,6 +213,9 @@ class UnitreeGo2Battery(FuserInput[UnitreeGo2BatteryConfig, List[float]]):
         raw_input : List[float]
             Raw lowstate data to be processed
         """
+        if not raw_input:
+            return
+
         pending_message = await self._raw_to_text(raw_input)
 
         if pending_message is not None:
