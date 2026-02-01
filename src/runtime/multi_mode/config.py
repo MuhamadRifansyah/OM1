@@ -396,25 +396,50 @@ def load_mode_config(
 
     g_robot_ip = raw_config.get("robot_ip", None)
     if g_robot_ip is None or g_robot_ip == "" or g_robot_ip == "192.168.0.241":
-        logging.warning("No robot ip found in mode config. Checking .env file.")
+        logging.warning(
+            "No robot IP found in mode config. Checking .env file..."
+        )
         backup_key = os.environ.get("ROBOT_IP")
         if backup_key:
             g_robot_ip = backup_key
-            logging.info("Found ROBOT_IP in .env file.")
+            logging.info("Robot IP found in .env file.")
+        else:
+            logging.warning(
+                "Robot IP not configured. App will proceed but hardware integration may fail at runtime."
+            )
 
     g_api_key = raw_config.get("api_key", None)
     if g_api_key is None or g_api_key == "" or g_api_key == "openmind_free":
-        logging.warning("No API key found in mode config. Checking .env file.")
+        logging.warning(
+            "No API key found in mode config. Checking .env file..."
+        )
         backup_key = os.environ.get("OM_API_KEY")
         if backup_key:
             g_api_key = backup_key
-            logging.info("Found OM_API_KEY in .env file.")
+            logging.info("API key found in .env file.")
+        else:
+            logging.warning(
+                "API key not configured. App will proceed but LLM requests may fail at runtime."
+            )
 
     g_URID = raw_config.get("URID", "default")
+    if g_URID is None or g_URID == "":
+        logging.warning(
+            "No URID (Unique Robot ID) found in the configuration file. Using 'default'. "
+            "Note: Multiple robots using 'default' will conflict in multirobot deployments."
+        )
+        g_URID = "default"
+
     if g_URID == "default":
         backup_URID = os.environ.get("URID")
         if backup_URID:
             g_URID = backup_URID
+            logging.info("URID found in .env file.")
+        else:
+            logging.warning(
+                "URID remains 'default'. This is acceptable for single-robot deployments. "
+                "For multirobot scenarios, set URID in .env file or config file to avoid conflicts."
+            )
 
     g_ut_eth = raw_config.get("unitree_ethernet", None)
     if g_ut_eth is None or g_ut_eth == "":

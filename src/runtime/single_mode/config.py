@@ -149,47 +149,51 @@ def load_config(
     g_robot_ip = raw_config.get("robot_ip", None)
     if g_robot_ip is None or g_robot_ip == "" or g_robot_ip == "192.168.0.241":
         logging.warning(
-            "No robot ip found in the configuration file. Checking for backup robot ip in your .env file."
+            "No robot IP found in the configuration file. Checking for backup ROBOT_IP in .env file..."
         )
         backup_key = os.environ.get("ROBOT_IP")
         g_robot_ip = backup_key
         if backup_key:
             raw_config["robot_ip"] = backup_key
-            logging.info("Success - Found ROBOT_IP in your .env file.")
+            logging.info("Robot IP found in .env file.")
         else:
             logging.warning(
-                "Could not find robot ip address. Please find your robot IP address and add it to the configuration file or .env file."
+                "Robot IP not configured. App will proceed but hardware integration may fail at runtime. "
+                "Please add ROBOT_IP to config file or set ROBOT_IP in .env file."
             )
     g_api_key = raw_config.get("api_key", None)
     if g_api_key is None or g_api_key == "" or g_api_key == "openmind_free":
         logging.warning(
-            "No API key found in the configuration file. Checking for backup OM_API_KEY in your .env file."
+            "No API key found in the configuration file. Checking for backup OM_API_KEY in .env file..."
         )
         backup_key = os.environ.get("OM_API_KEY")
         g_api_key = backup_key
         if backup_key:
             raw_config["api_key"] = backup_key
-            logging.info("Success - Found OM_API_KEY in your .env file.")
+            logging.info("API key found in .env file.")
         else:
             logging.warning(
-                "Could not find any API keys. Please get a free key at portal.openmind.org."
+                "API key not configured. App will proceed but LLM requests may fail at runtime. "
+                "Get a free key at https://portal.openmind.org/ and set OM_API_KEY in .env or config file."
             )
 
     g_URID = raw_config.get("URID", None)
     if g_URID is None or g_URID == "":
         logging.warning(
-            "No URID found in the configuration file. Multirobot deployments will conflict."
+            "No URID (Unique Robot ID) found in the configuration file. Using 'default'. "
+            "Note: Multiple robots using 'default' will conflict in multirobot deployments."
         )
+        g_URID = "default"
 
     if g_URID == "default":
-        logging.info("Checking for backup URID in your .env file.")
         backup_URID = os.environ.get("URID")
         if backup_URID:
             g_URID = backup_URID
-            logging.info("Success - Found URID in your .env file.")
+            logging.info("URID found in .env file.")
         else:
             logging.warning(
-                "Could not find backup URID in your .env file. Using 'default'. Multirobot deployments will conflict."
+                "URID remains 'default'. This is acceptable for single-robot deployments. "
+                "For multirobot scenarios, set URID in .env file or config file to avoid conflicts."
             )
 
     g_ut_eth = raw_config.get("unitree_ethernet", None)
