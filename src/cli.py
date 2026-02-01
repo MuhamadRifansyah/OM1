@@ -10,6 +10,7 @@ import json5
 import typer
 from jsonschema import ValidationError, validate
 
+from runtime.exceptions import ComponentValidationError
 from runtime.multi_mode.config import load_mode_config
 
 app = typer.Typer()
@@ -264,8 +265,9 @@ def validate_config(
         raise typer.Exit(1)
 
     except ValueError as e:
-        if "Component validation" in str(e):
-            pass  # Already printed by _validate_components
+        if isinstance(e, ComponentValidationError):
+            # Already printed by _validate_components
+            pass
         else:
             print("Error: Unexpected validation error")
             print(f"   {e}")
@@ -285,7 +287,7 @@ def validate_config(
         raise typer.Exit(1)
 
     except Exception as e:
-        if "Component validation" not in str(e):
+        if not isinstance(e, ComponentValidationError):
             print("Error: Unexpected validation error")
             print(f"   {e}")
             if verbose:
@@ -359,7 +361,7 @@ def _validate_components(
 
     Raises
     ------
-    ValueError
+    ComponentValidationError
         If component validation fails and allow_missing is False
     """
     errors = []
@@ -417,7 +419,7 @@ def _validate_components(
         print("Component validation failed:")
         for error in errors:
             print(f"   - {error}")
-        raise ValueError("Component validation failed")
+        raise ComponentValidationError("Component validation failed")
 
     if verbose:
         print("All components exist")
