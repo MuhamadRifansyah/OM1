@@ -1,7 +1,8 @@
 import logging
+from typing import Optional
 
 
-def load_unitree(unitree_ethernet: str):
+def load_unitree(unitree_ethernet: Optional[str]) -> None:
     """
     Initialize the Unitree robot's network communication channel.
 
@@ -11,29 +12,28 @@ def load_unitree(unitree_ethernet: str):
 
     Parameters
     ----------
-    unitree_ethernet : str
-        Configuration object containing the Unitree Ethernet adapter string, such as "eth0"
+    unitree_ethernet : Optional[str]
+        The Unitree Ethernet adapter string, such as "eth0".
 
     Returns
     -------
     None
-
-    Raises
-    ------
-    Exception
-        If initialization of the Unitree Ethernet channel fails.
-
     """
-    if unitree_ethernet is not None:
-        logging.info(
-            f"Using {unitree_ethernet} as the Unitree Network Ethernet Adapter"
+    if not unitree_ethernet:
+        return
+
+    logging.info("Using %s as the Unitree Network Ethernet Adapter", unitree_ethernet)
+
+    from unitree.unitree_sdk2py.core.channel import ChannelFactoryInitialize
+
+    try:
+        ChannelFactoryInitialize(0, unitree_ethernet)
+    except Exception:
+        logging.exception(
+            "Failed to initialize Unitree Ethernet channel for adapter %s",
+            unitree_ethernet,
         )
+        logging.warning("Continuing without Unitree DDS initialization")
+        return
 
-        from unitree.unitree_sdk2py.core.channel import ChannelFactoryInitialize
-
-        try:
-            ChannelFactoryInitialize(0, unitree_ethernet)
-        except Exception as e:
-            logging.error(f"Failed to initialize Unitree Ethernet channel: {e}")
-            # raise e
-        logging.info("Booting Unitree and CycloneDDS")
+    logging.info("Booting Unitree and CycloneDDS")
