@@ -71,6 +71,21 @@ async def test_poll_returns_mocked_peer_when_mock_mode_enabled(
 
 
 @pytest.mark.asyncio
+async def test_poll_does_not_crash_with_default_mock_coords(
+    fabric_closest_peer_instance, mock_io_provider
+):
+    # Default config has mock_mode=True and numeric mock_lat/mock_lon.
+    fabric_closest_peer_instance.config = FabricClosestPeerConfig()
+    fabric_closest_peer_instance.mock_mode = True
+
+    result = await fabric_closest_peer_instance._poll()
+
+    assert result == "Closest peer at 0.00000, 0.00000"
+    mock_io_provider.add_dynamic_variable.assert_any_call("closest_peer_lat", 0.0)
+    mock_io_provider.add_dynamic_variable.assert_any_call("closest_peer_lon", 0.0)
+
+
+@pytest.mark.asyncio
 async def test_poll_returns_none_if_requests_is_none_and_mock_disabled(caplog):
     pass
 

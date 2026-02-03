@@ -32,8 +32,8 @@ class FabricClosestPeerConfig(SensorConfig):
         default="http://localhost:8545", description="Fabric Endpoint"
     )
     mock_mode: bool = Field(default=True, description="Mock Mode")
-    mock_lat: Optional[float] = Field(default=None, description="Mock Latitude")
-    mock_lon: Optional[float] = Field(default=None, description="Mock Longitude")
+    mock_lat: float = Field(default=0.0, description="Mock Latitude")
+    mock_lon: float = Field(default=0.0, description="Mock Longitude")
 
 
 class FabricClosestPeer(FuserInput[FabricClosestPeerConfig, Optional[str]]):
