@@ -78,7 +78,7 @@ class GeminiLLM(LLM[R]):
     @AvatarLLMState.trigger_thinking()
     @LLMHistoryManager.update_history()
     async def ask(
-        self, prompt: str, messages: T.List[T.Dict[str, str]] = []
+        self, prompt: str, messages: T.Optional[T.List[T.Dict[str, str]]] = None
     ) -> T.Optional[R]:
         """
         Execute LLM query and parse response.
@@ -96,6 +96,9 @@ class GeminiLLM(LLM[R]):
             Parsed response matching the output_model structure, or None if
             parsing fails.
         """
+        if messages is None:
+            messages = []
+
         try:
             logging.debug(f"Gemini LLM input: {prompt}")
             logging.debug(f"Gemini LLM messages: {messages}")
