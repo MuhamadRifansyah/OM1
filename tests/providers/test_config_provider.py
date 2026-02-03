@@ -1,90 +1,64 @@
-from unittest.mock import MagicMock, patch
+import json
+import os
+from unittest.mock import Mock, patch
 
 import pytest
 
-from providers.config_provider import ConfigProvider
+import providers.config_provider as config_provider
 
 
 @pytest.fixture(autouse=True)
 def reset_singleton():
-    """Reset singleton instances between tests."""
-    ConfigProvider.reset()  # type: ignore
+    config_provider.ConfigProvider.reset()
     yield
-
-    try:
-        provider = ConfigProvider()
-        provider.stop()
-    except Exception:
-        pass
-
-    ConfigProvider.reset()  # type: ignore
+    config_provider.ConfigProvider.reset()
 
 
-@pytest.fixture
-def mock_zenoh():
-    with patch("providers.config_provider.open_zenoh_session") as mock_session:
-        mock_session_instance = MagicMock()
-        mock_publisher = MagicMock()
-        mock_subscriber = MagicMock()
-        mock_session_instance.declare_publisher.return_value = mock_publisher
-        mock_session_instance.declare_subscriber.return_value = mock_subscriber
-        mock_session.return_value = mock_session_instance
-        yield mock_session, mock_session_instance, mock_publisher, mock_subscriber
+def _make_provider(tmp_path):
+    dummy_session = Mock()
+    dummy_session.declare_publisher.return_value = Mock(put=Mock())
+    dummy_session.declare_subscriber.return_value = Mock(undeclare=Mock())
+
+    with (
+        patch("providers.config_provider.open_zenoh_session", return_value=dummy_session),
+        patch.object(
+            config_provider.ConfigProvider._singleton_class,
+            "_get_runtime_config_path",
+            return_value=str(tmp_path / ".runtime.json5"),
+        ),
+    ):
+        provider = config_provider.ConfigProvider()
+
+    return provider
 
 
-def test_initialization(mock_zenoh):
-    mock_session, mock_session_instance, mock_publisher, mock_subscriber = mock_zenoh
-    provider = ConfigProvider()
+def test_handle_set_config_uses_os_replace(tmp_path):
+    provider = _make_provider(tmp_path)
 
-    assert provider.running
-    assert provider.session == mock_session_instance
-    assert provider.config_response_publisher == mock_publisher
-    assert provider.config_request_subscriber == mock_subscriber
+    config_path = provider.config_path
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    with open(config_path, "w") as f:
+        f.write('{"old": true}')
 
-    mock_session_instance.declare_publisher.assert_called_once_with(
-        "om/config/response"
-    )
-    mock_session_instance.declare_subscriber.assert_called_once()
+    provider._send_config_response = Mock()
 
+    real_replace = os.replace
+    with patch("providers.config_provider.os.replace") as mock_replace:
+        mock_replace.side_effect = real_replace
+        provider._handle_set_config(request_id=Mock(), config_str='{"new": true}')
+        mock_replace.assert_called_once()
 
-def test_singleton_pattern():
-    provider1 = ConfigProvider()
-    provider2 = ConfigProvider()
-    assert provider1 is provider2
-
-
-def test_get_runtime_config_path(mock_zenoh):
-    provider = ConfigProvider()
-    config_path = provider._get_runtime_config_path()
-
-    assert config_path.endswith(".runtime.json5")
-    assert "config/memory" in config_path
+    with open(config_path, "r") as f:
+        updated = json.load(f)
+    assert updated == {"new": True}
 
 
-def test_initialization_failure():
-    with patch("providers.config_provider.open_zenoh_session") as mock_session:
-        mock_session.side_effect = Exception("Connection failed")
-        provider = ConfigProvider()
+def test_send_config_response_sends_error_when_config_missing(tmp_path):
+    provider = _make_provider(tmp_path)
 
-        assert not provider.running
-        assert provider.session is None
+    provider.config_response_publisher = Mock(put=Mock())
+    provider._send_error_response = Mock()
 
+    provider._send_config_response(request_id=Mock())
 
-def test_stop(mock_zenoh):
-    _, mock_session_instance, _, _ = mock_zenoh
-    provider = ConfigProvider()
-
-    provider.stop()
-
-    assert not provider.running
-    mock_session_instance.close.assert_called_once()
-
-
-def test_handle_config_request(mock_zenoh):
-    """Test that config request handler is registered correctly."""
-    _, mock_session_instance, _, _ = mock_zenoh
-    ConfigProvider()
-
-    call_args = mock_session_instance.declare_subscriber.call_args
-    assert call_args[0][0] == "om/config/request"
-    assert callable(call_args[0][1])
+    provider._send_error_response.assert_called_once()

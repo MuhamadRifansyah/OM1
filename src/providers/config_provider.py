@@ -108,7 +108,7 @@ class ConfigProvider:
             with open(temp_path, "w") as f:
                 json.dump(new_config, f, indent=2)
 
-            os.rename(temp_path, self.config_path)
+            os.replace(temp_path, self.config_path)
 
             logging.info(f"Updated runtime config file: {self.config_path}")
 
@@ -165,19 +165,17 @@ class ConfigProvider:
         """
         Get a snapshot of the current runtime configuration.
         """
-        try:
-            if not os.path.exists(self.config_path):
-                logging.warning(
-                    f"ConfigProvider: Config file not found: {self.config_path}"
-                )
-                return {}
+        if not os.path.exists(self.config_path):
+            raise FileNotFoundError(
+                f"ConfigProvider: Config file not found: {self.config_path}"
+            )
 
+        try:
             with open(self.config_path, "r") as f:
                 return json5.load(f)
-
         except Exception as e:
             logging.error(f"Failed to read config file {self.config_path}: {e}")
-            return {}
+            raise
 
     def stop(self):
         """
