@@ -595,9 +595,18 @@ def parse_lifecycle_hooks(
         Parsed lifecycle hook objects
     """
     hooks = []
-    for hook_data in raw_hooks:
+    for idx, hook_data in enumerate(raw_hooks):
         try:
-            handler_config = hook_data.get("handler_config", {}).copy()
+            raw_handler_config = hook_data.get("handler_config", {})
+            if raw_handler_config is None:
+                handler_config: Dict[str, Any] = {}
+            elif isinstance(raw_handler_config, dict):
+                handler_config = raw_handler_config.copy()
+            else:
+                raise TypeError(
+                    "handler_config must be a dict if provided "
+                    f"(got {type(raw_handler_config).__name__})"
+                )
 
             if api_key is not None and "api_key" not in handler_config:
                 handler_config["api_key"] = api_key
@@ -612,8 +621,8 @@ def parse_lifecycle_hooks(
                 priority=hook_data.get("priority", 0),
             )
             hooks.append(hook)
-        except (KeyError, ValueError) as e:
-            logging.error(f"Error parsing lifecycle hook: {e}")
+        except (KeyError, ValueError, TypeError) as e:
+            logging.error(f"Error parsing lifecycle hook at index {idx}: {e}")
 
     return hooks
 

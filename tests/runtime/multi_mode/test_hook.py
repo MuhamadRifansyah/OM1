@@ -1079,6 +1079,21 @@ class TestParseLifecycleHooks:
             assert len(hooks) == 0
             assert mock_logging.error.call_count == 2
 
+    def test_parse_hooks_invalid_handler_config_type(self):
+        """Test parsing hooks with invalid handler_config type."""
+        raw_hooks = [
+            {
+                "hook_type": "on_entry",
+                "handler_type": "message",
+                "handler_config": "not_a_dict",
+            }
+        ]
+
+        with patch("runtime.multi_mode.hook.logging") as mock_logging:
+            hooks = parse_lifecycle_hooks(raw_hooks)
+            assert len(hooks) == 0
+            mock_logging.error.assert_called_once()
+
 
 class TestExecuteLifecycleHooks:
     """Test cases for execute_lifecycle_hooks function."""
