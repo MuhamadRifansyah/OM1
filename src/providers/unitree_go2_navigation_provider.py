@@ -270,6 +270,7 @@ class UnitreeGo2NavigationProvider:
         """
         Stop the navigation provider by unsubscribing from topics and cleaning up resources.
         """
+        was_running = self.running
         self.running = False
 
         if self.session:
@@ -280,7 +281,10 @@ class UnitreeGo2NavigationProvider:
             self.ai_status_pub.undeclare()
             logging.info("AI status publisher closed")
 
-        logging.warning("Navigation Provider is not running")
+        if was_running:
+            logging.info("Navigation Provider stopped")
+        else:
+            logging.warning("Navigation Provider was not running")
 
     @property
     def navigation_state(self) -> str:
