@@ -51,7 +51,14 @@ def _parse_qwen_tool_calls(text: str) -> list:
                         },
                     }
                 )
-        except Exception:
+        except Exception as e:
+            logging.debug(
+                "Failed to parse Qwen <tool_call> block %d (len=%d): %s",
+                i,
+                len(raw),
+                type(e).__name__,
+                exc_info=True,
+            )
             continue
     return tool_calls
 
