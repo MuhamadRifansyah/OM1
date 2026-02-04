@@ -108,7 +108,7 @@ class ConfigProvider:
             with open(temp_path, "w") as f:
                 json.dump(new_config, f, indent=2)
 
-            os.rename(temp_path, self.config_path)
+            os.replace(temp_path, self.config_path)
 
             logging.info(f"Updated runtime config file: {self.config_path}")
 
