@@ -111,8 +111,8 @@ def generate_function_schemas_from_actions(actions: list) -> list[dict]:
                     f"Generated function schema for {action.llm_label}: {schema}"
                 )
             except Exception as e:
-                logging.error(
-                    f"Error generating function schema for {action.llm_label}: {e}"
+                logging.exception(
+                    f"Error generating function schema for {action.llm_label}"
                 )
 
     return schemas

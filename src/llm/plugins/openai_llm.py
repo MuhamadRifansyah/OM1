@@ -153,5 +153,5 @@ class OpenAILLM(LLM[R]):
             return None
 
         except Exception as e:
-            logging.error(f"OpenAI API error: {e}")
+            logging.exception("OpenAI API error")
             return None
