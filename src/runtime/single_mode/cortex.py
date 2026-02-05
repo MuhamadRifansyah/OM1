@@ -288,6 +288,17 @@ class CortexRuntime:
 
         self.sleep_ticker_provider.skip_sleep = True
 
+        if self.background_orchestrator:
+            self.background_orchestrator.stop()
+
+        if self.simulator_orchestrator:
+            logging.debug("Stopping simulator orchestrator")
+            self.simulator_orchestrator.stop()
+
+        if self.action_orchestrator:
+            logging.debug("Stopping action orchestrator")
+            self.action_orchestrator.stop()
+
         tasks_to_cancel = {}
 
         if self.cortex_loop_task and not self.cortex_loop_task.done():
@@ -412,6 +423,15 @@ class CortexRuntime:
                 await asyncio.gather(*tasks_to_cancel, return_exceptions=True)
             except Exception as e:
                 logging.warning(f"Error during final cleanup: {e}")
+
+        if self.background_orchestrator:
+            self.background_orchestrator.stop()
+
+        if self.simulator_orchestrator:
+            self.simulator_orchestrator.stop()
+
+        if self.action_orchestrator:
+            self.action_orchestrator.stop()
 
         # Stop ConfigProvider
         self.config_provider.stop()
