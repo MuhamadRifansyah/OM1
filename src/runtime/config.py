@@ -31,7 +31,7 @@ def _load_schema(schema_file: str) -> dict:
             f"Schema file not found: {schema_path}. Cannot validate configuration."
         )
 
-    with open(schema_path, "r") as f:
+    with open(schema_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 

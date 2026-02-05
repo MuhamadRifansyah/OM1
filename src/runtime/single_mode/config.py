@@ -134,7 +134,7 @@ def load_config(
         else config_source_path
     )
 
-    with open(config_path, "r") as f:
+    with open(config_path, "r", encoding="utf-8") as f:
         try:
             raw_config = json5.load(f)
         except Exception as e:

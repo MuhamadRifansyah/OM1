@@ -98,7 +98,7 @@ def start(
     setup_logging(config_name, log_level, log_to_file)
 
     try:
-        with open(config_path, "r") as f:
+        with open(config_path, "r", encoding="utf-8") as f:
             raw_config = json5.load(f)
 
         if "modes" in raw_config and "default_mode" in raw_config:

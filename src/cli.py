@@ -199,7 +199,7 @@ def validate_config(
 
         # Load and parse JSON5
         try:
-            with open(config_path, "r") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 raw_config = json5.load(f)
         except ValueError as e:
             print("Error: Invalid JSON5 syntax")
@@ -224,7 +224,7 @@ def validate_config(
             os.path.dirname(__file__), "../config/schema", schema_file
         )
 
-        with open(schema_path, "r") as f:
+        with open(schema_path, "r", encoding="utf-8") as f:
             schema = json.load(f)
 
         validate(instance=raw_config, schema=schema)
