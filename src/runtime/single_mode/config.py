@@ -19,6 +19,70 @@ from simulators import load_simulator
 from simulators.base import Simulator
 
 
+def _check_robot_config_requirements(raw_config: dict) -> None:
+    """
+    Validate that robot_ip is present when robot-dependent components are configured.
+
+    Checks for components that require robot connectivity:
+    - Unitree inputs/actions/simulators
+    - UBTech Yanshee inputs/actions
+    - Boston Dynamics Spot actions
+    - Any component prefixed with 'Unitree' or 'UBTech'
+
+    Raises
+    ------
+    ValueError
+        If robot-dependent components are present but robot_ip is missing or invalid.
+    """
+    robot_ip = raw_config.get("robot_ip")
+    # Check if robot_ip is missing or invalid
+    is_robot_ip_valid = robot_ip and robot_ip.strip() and robot_ip != "192.168.0.241"
+
+    if is_robot_ip_valid:
+        return  # All good, robot_ip is present and valid
+
+    # List of component types that require robot connectivity
+    robot_dependent_types = {
+        "Unitree",
+        "UBTech",
+        "UnitreeGo2",
+        "UnitreeG1",
+        "UnitreeH1",
+        "UnitreeB2",
+        "UbTech",
+        "YansheeAPI",
+    }
+
+    # Check all component types in the configuration
+    component_sections = [
+        ("agent_inputs", "input"),
+        ("agent_actions", "action"),
+        ("simulators", "simulator"),
+        ("backgrounds", "background"),
+    ]
+
+    found_robot_components = []
+    for section_name, component_label in component_sections:
+        components = raw_config.get(section_name, [])
+        for component in components:
+            component_type = component.get("type", "")
+            # Check if any part of the type name matches robot-dependent types
+            if any(robot_type in component_type for robot_type in robot_dependent_types):
+                found_robot_components.append(
+                    f"{component_label} '{component.get('name', component_type)}' (type: {component_type})"
+                )
+
+    if found_robot_components:
+        component_list = "\n  ".join(found_robot_components)
+        raise ValueError(
+            f"Configuration requires robot connectivity but 'robot_ip' is missing or invalid.\n"
+            f"\nRobot-dependent components found:\n  {component_list}\n"
+            f"\nPlease provide a valid robot IP address by:\n"
+            f"  1. Adding 'robot_ip: \"<robot-ip-address>\"' to your config file, OR\n"
+            f"  2. Setting the ROBOT_IP environment variable"
+        )
+
+
 @dataclass
 class RuntimeConfig:
     """
@@ -160,6 +224,10 @@ def load_config(
             logging.warning(
                 "Could not find robot ip address. Please find your robot IP address and add it to the configuration file or .env file."
             )
+
+    # Validate that robot-dependent components have a valid robot_ip
+    _check_robot_config_requirements(raw_config)
+
     g_api_key = raw_config.get("api_key", None)
     if g_api_key is None or g_api_key == "" or g_api_key == "openmind_free":
         logging.warning(
