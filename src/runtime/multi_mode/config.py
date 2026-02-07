@@ -399,9 +399,7 @@ def load_mode_config(
 
     g_robot_ip = raw_config.get("robot_ip", None)
     if g_robot_ip is None or g_robot_ip == "" or g_robot_ip == "192.168.0.241":
-        logging.warning(
-            "No robot IP found in mode config. Checking .env file..."
-        )
+        logging.warning("No robot IP found in mode config. Checking .env file...")
         backup_key = os.environ.get("ROBOT_IP")
         if backup_key:
             g_robot_ip = backup_key
@@ -413,9 +411,7 @@ def load_mode_config(
 
     g_api_key = raw_config.get("api_key", None)
     if g_api_key is None or g_api_key == "" or g_api_key == "openmind_free":
-        logging.warning(
-            "No API key found in mode config. Checking .env file..."
-        )
+        logging.warning("No API key found in mode config. Checking .env file...")
         backup_key = os.environ.get("OM_API_KEY")
         if backup_key:
             g_api_key = backup_key
