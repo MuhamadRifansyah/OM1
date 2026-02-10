@@ -56,6 +56,9 @@ def test_validate_config_separates_stdout_stderr():
         assert "Schema validation passed" in result.stderr
         assert "Detected single-mode configuration" in result.stderr
 
+        assert "=" * 50 in result.stderr
+        assert "=" * 50 not in result.stdout
+
 
 def test_validate_config_error_output():
     """

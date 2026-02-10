@@ -9,6 +9,9 @@ import traceback
 import dotenv
 import json5
 import typer
+
+from typing import Any, Dict, List, Tuple
+
 from jsonschema import ValidationError, validate
 
 from runtime.multi_mode.config import load_mode_config
@@ -254,7 +257,7 @@ def validate_config(
         # Success message
         print(file=sys.stderr)
         print("=" * 50, file=sys.stderr)
-        print("Configuration is valid!")
+        print("Configuration is valid!", file=sys.stdout)
         print("=" * 50, file=sys.stderr)
 
         if verbose:
@@ -337,12 +340,12 @@ def _resolve_config_path(config_name: str) -> str:
 
 
 def _validate_components(
-    raw_config: dict,
+    raw_config: Dict[str, Any],
     is_multi_mode: bool,
     verbose: bool,
     skip_inputs: bool = False,
     allow_missing: bool = False,
-):
+) -> None:
     """
     Validate that all component types exist in codebase.
 
@@ -427,11 +430,11 @@ def _validate_components(
 
 def _validate_mode_components(
     mode_name: str,
-    mode_data: dict,
+    mode_data: Dict[str, Any],
     verbose: bool,
     skip_inputs: bool = False,
     allow_missing: bool = False,
-) -> tuple:
+) -> Tuple[List[str], List[str]]:
     """
     Validate components for a single mode.
 
@@ -716,7 +719,7 @@ def _check_background_exists(bg_type: str) -> bool:
     return _check_class_in_dir(plugins_dir, bg_type)
 
 
-def _check_api_key(raw_config: dict, verbose: bool):
+def _check_api_key(raw_config: Dict[str, Any], verbose: bool) -> None:
     """
     Check API key configuration (warning only).
 
@@ -742,7 +745,7 @@ def _check_api_key(raw_config: dict, verbose: bool):
             print("API key configured", file=sys.stderr)
 
 
-def _print_config_summary(raw_config: dict, is_multi_mode: bool):
+def _print_config_summary(raw_config: Dict[str, Any], is_multi_mode: bool) -> None:
     """
     Print configuration summary.
 
