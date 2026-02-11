@@ -104,7 +104,11 @@ class VLMVila(FuserInput[VLMVilaConfig, Optional[str]]):
                 self.message_buffer.put(vlm_reply)
                 logging.info("Detected VLM message: %s", vlm_reply)
         except json.JSONDecodeError:
-            pass
+            snippet = raw_message[:200]
+            suffix = "…" if len(raw_message) > 200 else ""
+            logging.warning(
+                "Malformed VLM message (invalid JSON): %s%s", snippet, suffix
+            )
 
     async def _poll(self) -> Optional[str]:
         """
