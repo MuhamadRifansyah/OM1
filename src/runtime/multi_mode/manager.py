@@ -1,3 +1,5 @@
+"""Mode manager runtime for multi-mode configuration handling."""
+
 import asyncio
 import json
 import logging
@@ -6,8 +8,10 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
-import json5
-import zenoh
+# pylint: disable=import-error
+import json5  # type: ignore[import-not-found]
+import zenoh  # type: ignore[import-not-found]
+# pylint: enable=import-error
 
 from runtime.multi_mode.config import (
     LifecycleHookType,
@@ -55,7 +59,7 @@ class ModeState:
     user_context: Dict = field(default_factory=dict)
 
 
-class ModeManager:
+class ModeManager:  # pylint: disable=too-many-instance-attributes
     """
     Manages mode transitions and state for the OM1 system.
     """
@@ -104,13 +108,13 @@ class ModeManager:
             self._zenoh_mode_status_response_pub = self.session.declare_publisher(
                 self.mode_status_response
             )
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             logging.exception("Error opening Zenoh client")
             self.session = None
             self._zenoh_mode_status_response_pub = None
 
         logging.info(
-            f"Mode Manager initialized with current mode: {self.state.current_mode}"
+            "Mode Manager initialized with current mode: %s", self.state.current_mode
         )
 
         self._create_runtime_config_file()
@@ -143,15 +147,22 @@ class ModeManager:
 
         try:
             runtime_config = mode_config_to_dict(self.config)
+            if not runtime_config:
+                logging.error(
+                    "Runtime config serialization failed; skipping runtime config write"
+                )
+                return
 
             temp_file = runtime_config_path + ".tmp"
-            with open(temp_file, "w") as f:
+            with open(temp_file, "w", encoding="utf-8") as f:
                 json5.dump(runtime_config, f, indent=2)
 
             os.rename(temp_file, runtime_config_path)
-            logging.debug(f"Runtime config file created/updated: {runtime_config_path}")
+            logging.debug(
+                "Runtime config file created/updated: %s", runtime_config_path
+            )
 
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             logging.exception("Error creating runtime config file")
 
     def set_event_loop(self, loop: asyncio.AbstractEventLoop):
@@ -229,8 +240,8 @@ class ModeManager:
                     await callback(from_mode, to_mode)
                 else:
                     callback(from_mode, to_mode)
-            except Exception as e:
-                logging.error(f"Error in transition callback: {e}")
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logging.error("Error in transition callback: %s", e)
 
     async def check_time_based_transitions(self) -> Optional[str]:
         """
@@ -261,16 +272,23 @@ class ModeManager:
                 await current_config.execute_lifecycle_hooks(
                     LifecycleHookType.ON_TIMEOUT, timeout_context
                 )
-            except Exception as e:
-                logging.error(f"Error executing timeout lifecycle hooks: {e}")
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logging.error("Error executing timeout lifecycle hooks: %s", e)
 
             for rule in self.config.transition_rules:
                 if (
-                    rule.from_mode == self.state.current_mode or rule.from_mode == "*"
-                ) and rule.transition_type == TransitionType.TIME_BASED:
+                    rule.from_mode
+                    in (
+                        self.state.current_mode,
+                        "*",
+                    )
+                    and rule.transition_type == TransitionType.TIME_BASED
+                ):
                     if self._can_transition(rule):
                         logging.info(
-                            f"Time-based transition triggered: {self.state.current_mode} -> {rule.to_mode}"
+                            "Time-based transition triggered: %s -> %s",
+                            self.state.current_mode,
+                            rule.to_mode,
                         )
                         return rule.to_mode
 
@@ -289,9 +307,13 @@ class ModeManager:
         matching_rules = []
         for rule in self.config.transition_rules:
             if (
-                rule.from_mode == self.state.current_mode or rule.from_mode == "*"
-            ) and rule.transition_type == TransitionType.CONTEXT_AWARE:
-
+                rule.from_mode
+                in (
+                    self.state.current_mode,
+                    "*",
+                )
+                and rule.transition_type == TransitionType.CONTEXT_AWARE
+            ):
                 if self._can_transition(rule) and self._evaluate_context_conditions(
                     rule
                 ):
@@ -302,8 +324,12 @@ class ModeManager:
             matching_rules.sort(key=lambda r: r.priority, reverse=True)
             target_rule = matching_rules[0]
             logging.info(
-                f"Context-aware transition triggered: {self.state.current_mode} -> {target_rule.to_mode} "
-                f"(priority: {target_rule.priority}, conditions: {target_rule.context_conditions})"
+                "Context-aware transition triggered: %s -> %s "
+                "(priority: %s, conditions: %s)",
+                self.state.current_mode,
+                target_rule.to_mode,
+                target_rule.priority,
+                target_rule.context_conditions,
             )
             return target_rule.to_mode
 
@@ -332,9 +358,13 @@ class ModeManager:
         matching_rules = []
         for rule in self.config.transition_rules:
             if (
-                rule.from_mode == self.state.current_mode or rule.from_mode == "*"
-            ) and rule.transition_type == TransitionType.INPUT_TRIGGERED:
-
+                rule.from_mode
+                in (
+                    self.state.current_mode,
+                    "*",
+                )
+                and rule.transition_type == TransitionType.INPUT_TRIGGERED
+            ):
                 # Check if any trigger keywords are present
                 for keyword in rule.trigger_keywords:
                     if keyword.lower() in input_lower:
@@ -347,9 +377,11 @@ class ModeManager:
             matching_rules.sort(key=lambda r: r.priority, reverse=True)
             best_rule = matching_rules[0]
             logging.info(
-                f"Input-triggered transition: {self.state.current_mode} -> {best_rule.to_mode}"
+                "Input-triggered transition: %s -> %s",
+                self.state.current_mode,
+                best_rule.to_mode,
             )
-            logging.info(f"Triggered by keywords: {best_rule.trigger_keywords}")
+            logging.info("Triggered by keywords: %s", best_rule.trigger_keywords)
             return best_rule.to_mode
 
         return None
@@ -376,11 +408,11 @@ class ModeManager:
                 current_time - self.transition_cooldowns[transition_key]
                 < rule.cooldown_seconds
             ):
-                logging.debug(f"Transition {transition_key} still in cooldown")
+                logging.debug("Transition %s still in cooldown", transition_key)
                 return False
 
         if rule.to_mode not in self.config.modes:
-            logging.warning(f"Target mode '{rule.to_mode}' not found in configuration")
+            logging.warning("Target mode '%s' not found in configuration", rule.to_mode)
             return False
 
         return True
@@ -409,14 +441,16 @@ class ModeManager:
                 condition_key, condition_value, user_context
             ):
                 logging.debug(
-                    f"Context condition failed: {condition_key}={condition_value}, "
-                    f"actual context: {user_context.get(condition_key)}"
+                    "Context condition failed: %s=%s, actual context: %s",
+                    condition_key,
+                    condition_value,
+                    user_context.get(condition_key),
                 )
                 return False
 
         return True
 
-    def _evaluate_single_condition(
+    def _evaluate_single_condition(  # pylint: disable=too-many-return-statements,no-else-return
         self, key: str, expected_value, user_context: Dict
     ) -> bool:
         """
@@ -501,11 +535,11 @@ class ModeManager:
             return False
 
         if target_mode not in self.config.modes:
-            logging.error(f"Target mode '{target_mode}' not found")
+            logging.error("Target mode '%s' not found", target_mode)
             return False
 
         if target_mode == self.state.current_mode:
-            logging.info(f"Already in mode '{target_mode}'")
+            logging.info("Already in mode '%s'", target_mode)
             return True
 
         return await self._execute_transition(target_mode, reason)
@@ -529,7 +563,8 @@ class ModeManager:
         async with self._transition_lock:
             if self._is_transitioning:
                 logging.debug(
-                    f"Transition already in progress, skipping transition to {target_mode}"
+                    "Transition already in progress, skipping transition to %s",
+                    target_mode,
                 )
                 return True
 
@@ -539,7 +574,7 @@ class ModeManager:
             try:
                 if from_mode == target_mode:
                     logging.debug(
-                        f"Already in target mode '{target_mode}', skipping transition"
+                        "Already in target mode '%s', skipping transition", target_mode
                     )
                     return True
 
@@ -559,12 +594,14 @@ class ModeManager:
 
                 # Execute exit hooks for the current mode
                 if from_config:
-                    logging.debug(f"Executing exit hooks for mode: {from_mode}")
+                    logging.debug("Executing exit hooks for mode: %s", from_mode)
                     exit_success = await from_config.execute_lifecycle_hooks(
                         LifecycleHookType.ON_EXIT, transition_context.copy()
                     )
                     if not exit_success:
-                        logging.warning(f"Some exit hooks failed for mode: {from_mode}")
+                        logging.warning(
+                            "Some exit hooks failed for mode: %s", from_mode
+                        )
 
                 # Execute global exit hooks
                 global_exit_success = await self.config.execute_global_lifecycle_hooks(
@@ -586,16 +623,19 @@ class ModeManager:
                     self.state.transition_history = self.state.transition_history[-25:]
 
                 logging.info(
-                    f"Mode transition: {from_mode} -> {target_mode} (reason: {reason})"
+                    "Mode transition: %s -> %s (reason: %s)",
+                    from_mode,
+                    target_mode,
+                    reason,
                 )
 
                 # Execute entry hooks for the new mode
-                logging.debug(f"Executing entry hooks for mode: {target_mode}")
+                logging.debug("Executing entry hooks for mode: %s", target_mode)
                 entry_success = await to_config.execute_lifecycle_hooks(
                     LifecycleHookType.ON_ENTRY, transition_context.copy()
                 )
                 if not entry_success:
-                    logging.warning(f"Some entry hooks failed for mode: {target_mode}")
+                    logging.warning("Some entry hooks failed for mode: %s", target_mode)
 
                 # Execute global entry hooks
                 global_entry_success = await self.config.execute_global_lifecycle_hooks(
@@ -610,9 +650,12 @@ class ModeManager:
 
                 return True
 
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 logging.error(
-                    f"Failed to execute transition {from_mode} -> {target_mode}: {e}"
+                    "Failed to execute transition %s -> %s: %s",
+                    from_mode,
+                    target_mode,
+                    e,
                 )
                 return False
             finally:
@@ -630,7 +673,7 @@ class ModeManager:
         available = set()
 
         for rule in self.config.transition_rules:
-            if rule.from_mode == self.state.current_mode or rule.from_mode == "*":
+            if rule.from_mode in (self.state.current_mode, "*"):
                 if self._can_transition(rule):
                     available.add(rule.to_mode)
 
@@ -699,23 +742,23 @@ class ModeManager:
         """
         time_target = await self.check_time_based_transitions()
         if time_target:
-            logging.info(f"Time-based transition to mode: {time_target}")
+            logging.info("Time-based transition to mode: %s", time_target)
             return (time_target, "time_based")
 
         context_target = await self.check_context_aware_transitions()
         if context_target:
-            logging.info(f"Context-aware transition to mode: {context_target}")
+            logging.info("Context-aware transition to mode: %s", context_target)
             return (context_target, "context_aware")
 
         if input_text:
             target_mode = self.check_input_triggered_transitions(input_text)
             if target_mode:
-                logging.info(f"Input-triggered transition to mode: {target_mode}")
+                logging.info("Input-triggered transition to mode: %s", target_mode)
                 return (target_mode, "input_triggered")
 
         return None
 
-    def _zenoh_mode_status_request(self, data: zenoh.Sample):
+    def _zenoh_mode_status_request(self, data: zenoh.Sample):  # pylint: disable=inconsistent-return-statements
         """
         Process incoming mode status requests via Zenoh.
 
@@ -725,7 +768,7 @@ class ModeManager:
             The incoming Zenoh sample containing the request.
         """
         mode_status = ModeStatusRequest.deserialize(data.payload.to_bytes())
-        logging.debug(f"Received mode status request: {mode_status}")
+        logging.debug("Received mode status request: %s", mode_status)
 
         code = mode_status.code
         request_id = mode_status.request_id
@@ -746,8 +789,8 @@ class ModeManager:
                     )
                 else:
                     logging.error("Main event loop is not set or not running")
-            except Exception as e:
-                logging.error(f"Error scheduling mode switch request: {e}")
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logging.error("Error scheduling mode switch request: %s", e)
             return
 
         # Request current mode info
@@ -775,11 +818,11 @@ class ModeManager:
         """
         try:
             context_data = json.loads(data.payload.to_string())
-            logging.debug(f"Received context update: {context_data}")
+            logging.debug("Received context update: %s", context_data)
 
             if isinstance(context_data, dict):
                 self.update_user_context(context_data)
-                logging.info(f"Updated user context with: {context_data}")
+                logging.info("Updated user context with: %s", context_data)
 
                 if self._main_event_loop and self._main_event_loop.is_running():
                     self._main_event_loop.call_soon_threadsafe(
@@ -788,10 +831,10 @@ class ModeManager:
                         )
                     )
             else:
-                logging.warning(f"Invalid context data format: {context_data}")
+                logging.warning("Invalid context data format: %s", context_data)
 
-        except (json.JSONDecodeError, Exception) as e:
-            logging.error(f"Error processing context update: {e}")
+        except (json.JSONDecodeError, Exception) as e:  # pylint: disable=broad-exception-caught
+            logging.error("Error processing context update: %s", e)
 
     async def _check_and_apply_context_transition(self):
         """
@@ -804,12 +847,13 @@ class ModeManager:
             context_target = await self.check_context_aware_transitions()
             if context_target:
                 logging.info(
-                    f"Context-aware transition triggered by context update: "
-                    f"{self.state.current_mode} -> {context_target}"
+                    "Context-aware transition triggered by context update: %s -> %s",
+                    self.state.current_mode,
+                    context_target,
                 )
                 await self._execute_transition(context_target, "context_aware")
-        except Exception as e:
-            logging.error(f"Error checking context-aware transitions: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Error checking context-aware transitions: %s", e)
 
     async def _handle_mode_switch_request(
         self, frame_id: str, request_id: str, target_mode: str
@@ -882,7 +926,7 @@ class ModeManager:
         state_file = self._get_state_file_path()
 
         try:
-            with open(state_file, "r") as f:
+            with open(state_file, "r", encoding="utf-8") as f:
                 state_data = json.load(f)
 
             last_active_mode = state_data.get("last_active_mode")
@@ -892,8 +936,7 @@ class ModeManager:
                 and last_active_mode in self.config.modes
                 and last_active_mode != self.config.default_mode
             ):
-
-                logging.info(f"Restoring last active mode: {last_active_mode}")
+                logging.info("Restoring last active mode: %s", last_active_mode)
                 self.state.current_mode = last_active_mode
                 self.state.previous_mode = state_data.get("previous_mode")
 
@@ -905,16 +948,16 @@ class ModeManager:
                             -25:
                         ]
 
-                logging.info(f"Mode state restored from {state_file}")
+                logging.info("Mode state restored from %s", state_file)
             else:
-                logging.info(f"Using default mode: {self.config.default_mode}")
+                logging.info("Using default mode: %s", self.config.default_mode)
 
         except FileNotFoundError:
-            logging.debug(f"No state file found at {state_file}, using default mode")
+            logging.debug("No state file found at %s, using default mode", state_file)
         except (json.JSONDecodeError, KeyError) as e:
-            logging.warning(f"Invalid state file format: {e}, using default mode")
-        except Exception as e:
-            logging.error(f"Error loading mode state: {e}, using default mode")
+            logging.warning("Invalid state file format: %s, using default mode", e)
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Error loading mode state: %s, using default mode", e)
 
     def _save_mode_state(self):
         """
@@ -939,11 +982,11 @@ class ModeManager:
             }
 
             temp_file = state_file + ".tmp"
-            with open(temp_file, "w") as f:
+            with open(temp_file, "w", encoding="utf-8") as f:
                 json.dump(state_data, f, indent=2)
 
             os.rename(temp_file, state_file)
-            logging.debug(f"Mode state saved to {state_file}")
+            logging.debug("Mode state saved to %s", state_file)
 
-        except Exception as e:
-            logging.error(f"Error saving mode state: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Error saving mode state: %s", e)
