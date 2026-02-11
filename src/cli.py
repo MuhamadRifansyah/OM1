@@ -1,3 +1,5 @@
+"""CLI tools for inspecting and validating OM1 configuration files."""
+
 import ast
 import json
 import logging
@@ -6,7 +8,11 @@ import os
 import traceback
 
 import dotenv
-import json5
+
+# pylint: disable=import-error
+import json5  # type: ignore[import-not-found]
+
+# pylint: enable=import-error
 import typer
 from jsonschema import ValidationError, validate
 
@@ -62,8 +68,8 @@ def modes(config_name: str) -> None:
             print(f"  Frequency: {mode.hertz} Hz")
             if mode.timeout_seconds:
                 print(f"  Timeout: {mode.timeout_seconds} seconds")
-            print(f"  Inputs: {len(mode._raw_inputs)}")
-            print(f"  Actions: {len(mode._raw_actions)}")
+            print(f"  Inputs: {len(mode._raw_inputs)}")  # pylint: disable=protected-access
+            print(f"  Actions: {len(mode._raw_actions)}")  # pylint: disable=protected-access
             if mode.lifecycle_hooks:
                 print(f"  Lifecycle Hooks: {len(mode.lifecycle_hooks)}")
             print()
@@ -86,11 +92,11 @@ def modes(config_name: str) -> None:
                 print(f"  Cooldown: {rule.cooldown_seconds}s")
             print()
 
-    except FileNotFoundError:
-        logging.error(f"Configuration file not found: {config_name}.json5")
-        raise typer.Exit(1)
+    except FileNotFoundError as exc:
+        logging.error("Configuration file not found: %s.json5", config_name)
+        raise typer.Exit(1) from exc
     except Exception as e:
-        logging.error(f"Error loading mode configuration: {e}")
+        logging.error("Error loading mode configuration: %s", e)
         raise typer.Exit(1)
 
 
@@ -118,7 +124,7 @@ def list_configs() -> None:
             config_path = os.path.join(config_dir, filename)
 
             try:
-                with open(config_path, "r") as f:
+                with open(config_path, "r", encoding="utf-8") as f:
                     raw_config = json5.load(f)
 
                 if "modes" in raw_config and "default_mode" in raw_config:
@@ -127,7 +133,7 @@ def list_configs() -> None:
                     )
                 else:
                     configs.append((config_name, raw_config.get("name", config_name)))
-            except Exception as _:
+            except Exception as _:  # pylint: disable=broad-exception-caught
                 configs.append((config_name, "Invalid config"))
 
     print("-" * 32)
@@ -147,7 +153,7 @@ def list_configs() -> None:
 
 
 @app.command()
-def validate_config(
+def validate_config(  # pylint: disable=too-many-branches,too-many-statements
     config_name: str = typer.Argument(
         ...,
         help="Configuration file name or path (e.g., 'test' or 'config/test.json5')",
@@ -158,7 +164,10 @@ def validate_config(
     check_components: bool = typer.Option(
         True,
         "--check-components",
-        help="Verify that all components (inputs, LLMs, actions) exist in codebase (slower but thorough)",
+        help=(
+            "Verify that all components (inputs, LLMs, actions) exist in codebase "
+            "(slower but thorough)"
+        ),
     ),
     skip_inputs: bool = typer.Option(
         False,
@@ -212,7 +221,7 @@ def validate_config(
 
         # Load and parse JSON5
         try:
-            with open(config_path, "r") as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 raw_config = json5.load(f)
         except ValueError as e:
             print("Error: Invalid JSON5 syntax")
@@ -237,7 +246,7 @@ def validate_config(
             os.path.dirname(__file__), "../config/schema", schema_file
         )
 
-        with open(schema_path, "r") as f:
+        with open(schema_path, "r", encoding="utf-8") as f:
             schema = json.load(f)
 
         validate(instance=raw_config, schema=schema)
@@ -283,7 +292,6 @@ def validate_config(
             print("Error: Unexpected validation error")
             print(f"   {e}")
             if verbose:
-
                 traceback.print_exc()
         raise typer.Exit(1)
 
@@ -302,7 +310,6 @@ def validate_config(
             print("Error: Unexpected validation error")
             print(f"   {e}")
             if verbose:
-
                 traceback.print_exc()
         raise typer.Exit(1)
 
@@ -347,7 +354,7 @@ def _resolve_config_path(config_name: str) -> str:
     )
 
 
-def _validate_components(
+def _validate_components(  # pylint: disable=too-many-locals,too-many-branches
     raw_config: dict,
     is_multi_mode: bool,
     verbose: bool,
@@ -411,14 +418,13 @@ def _validate_components(
             errors.extend(mode_errors)
             warnings.extend(mode_warnings)
 
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         error_msg = f"Component validation error: {e}"
         if allow_missing:
             warnings.append(error_msg)
         else:
             errors.append(error_msg)
         if verbose:
-
             traceback.print_exc()
 
     if warnings:
@@ -436,7 +442,7 @@ def _validate_components(
         print("All components exist")
 
 
-def _validate_mode_components(
+def _validate_mode_components(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements,too-many-nested-blocks
     mode_name: str,
     mode_data: dict,
     verbose: bool,
@@ -583,7 +589,7 @@ def _validate_mode_components(
                     if verbose:
                         print("OK")
 
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-exception-caught
         msg = f"[{mode_name}] Error during validation: {e}"
         if allow_missing:
             warnings.append(msg)
@@ -623,7 +629,8 @@ def _check_class_in_dir(directory: str, class_name: str) -> bool:
                     for node in tree.body:
                         if isinstance(node, ast.ClassDef) and node.name == class_name:
                             return True
-            except Exception:
+            except Exception as e:  # pylint: disable=broad-exception-caught
+                logging.warning("Failed to parse %s: %s", filepath, e)
                 continue
     return False
 
@@ -783,7 +790,6 @@ def _print_config_summary(raw_config: dict, is_multi_mode: bool):
 
 
 if __name__ == "__main__":
-
     # Fix for Linux multiprocessing
     if mp.get_start_method(allow_none=True) != "spawn":
         mp.set_start_method("spawn")
