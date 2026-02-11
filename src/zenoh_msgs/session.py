@@ -1,8 +1,10 @@
+"""Zenoh session helpers for local or discovery-based connections."""
+
 import logging
 
-import zenoh
-
-logging.basicConfig(level=logging.INFO)
+# pylint: disable=import-error
+import zenoh  # type: ignore[import-not-found]
+# pylint: enable=import-error
 
 
 def create_zenoh_config(network_discovery: bool = True) -> zenoh.Config:
@@ -41,12 +43,15 @@ def open_zenoh_session() -> zenoh.Session:
     Exception
         If unable to open a Zenoh session.
     """
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO)
+
     local_config = create_zenoh_config(network_discovery=False)
     try:
         session = zenoh.open(local_config)
         logging.info("Zenoh client opened without network discovery")
         return session
-    except Exception:
+    except Exception:  # pylint: disable=broad-exception-caught
         logging.info("Falling back to network discovery...")
 
     config = create_zenoh_config()
@@ -54,15 +59,17 @@ def open_zenoh_session() -> zenoh.Session:
         session = zenoh.open(config)
         logging.info("Zenoh client opened with network discovery")
         return session
-    except Exception as e:
-        logging.error(f"Error opening Zenoh client: {e}")
+    except Exception as e:  # pylint: disable=broad-exception-caught
+        logging.error("Error opening Zenoh client: %s", e)
+        # pylint: disable=broad-exception-raised
         raise Exception("Failed to open Zenoh session") from e
+        # pylint: enable=broad-exception-raised
 
 
 if __name__ == "__main__":
-    session = open_zenoh_session()
-    if session:
+    zenoh_session = open_zenoh_session()
+    if zenoh_session:
         logging.info("Session opened successfully")
-        session.close()
+        zenoh_session.close()
     else:
         logging.error("Failed to open Zenoh session")
