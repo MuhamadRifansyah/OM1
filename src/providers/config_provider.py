@@ -1,10 +1,12 @@
+"""Zenoh-backed provider for runtime configuration requests."""
+
 import json
 import logging
 import os
 from uuid import uuid4
 
-import json5
-import zenoh
+import json5  # type: ignore[import-not-found]  # pylint: disable=import-error
+import zenoh  # type: ignore[import-not-found]  # pylint: disable=import-error
 
 from zenoh_msgs import (
     ConfigRequest,
@@ -18,7 +20,7 @@ from .singleton import singleton
 
 
 @singleton
-class ConfigProvider:
+class ConfigProvider:  # pylint: disable=too-few-public-methods
     """
     Singleton provider for runtime configuration broadcasting via Zenoh.
     """
@@ -55,8 +57,8 @@ class ConfigProvider:
 
             self.running = True
             logging.info("ConfigProvider initialized with Zenoh")
-        except Exception as e:
-            logging.error(f"Failed to initialize ConfigProvider Zenoh session: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Failed to initialize ConfigProvider Zenoh session: %s", e)
 
     def _get_runtime_config_path(self) -> str:
         """
@@ -85,7 +87,7 @@ class ConfigProvider:
         """
         try:
             request = ConfigRequest.deserialize(sample.payload.to_bytes())
-            logging.debug(f"Received config request: {request.request_id}")
+            logging.debug("Received config request: %s", request.request_id)
 
             if request.config and request.config.data:
                 # This is a set_config request
@@ -94,8 +96,8 @@ class ConfigProvider:
                 # This is a get_config request
                 self._send_config_response(request.request_id)
 
-        except Exception as e:
-            logging.error(f"Error handling config request: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Error handling config request: %s", e)
 
     def _handle_set_config(self, request_id: String, config_str: str):
         """
@@ -105,17 +107,17 @@ class ConfigProvider:
             new_config = json5.loads(config_str)
 
             temp_path = self.config_path + f".tmp.{uuid4()}"
-            with open(temp_path, "w") as f:
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(new_config, f, indent=2)
 
             os.rename(temp_path, self.config_path)
 
-            logging.info(f"Updated runtime config file: {self.config_path}")
+            logging.info("Updated runtime config file: %s", self.config_path)
 
             self._send_config_response(request_id)
 
-        except Exception as e:
-            logging.error(f"Failed to update config: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Failed to update config: %s", e)
             self._send_error_response(request_id, f"Failed to update config: {e}")
 
     def _send_config_response(self, request_id: String):
@@ -124,7 +126,11 @@ class ConfigProvider:
         """
         try:
             # Get current config
-            config_snapshot = self._get_config_snapshot()
+            config_snapshot, error_message = self._get_config_snapshot()
+            if error_message:
+                self._send_error_response(request_id, error_message)
+                return
+
             config_json_str = json.dumps(config_snapshot, indent=2)
 
             response = ConfigResponse(
@@ -138,8 +144,8 @@ class ConfigProvider:
                 self.config_response_publisher.put(response.serialize())
                 logging.info("ConfigProvider sent config response")
 
-        except Exception as e:
-            logging.error(f"Failed to send config response: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Failed to send config response: %s", e)
             self._send_error_response(request_id, str(e))
 
     def _send_error_response(self, request_id: String, error_message: str):
@@ -156,28 +162,33 @@ class ConfigProvider:
 
             if self.config_response_publisher:
                 self.config_response_publisher.put(response.serialize())
-                logging.warning(f"ConfigProvider sent error response: {error_message}")
+                logging.warning("ConfigProvider sent error response: %s", error_message)
 
-        except Exception as e:
-            logging.error(f"Failed to send error response: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Failed to send error response: %s", e)
 
-    def _get_config_snapshot(self) -> dict:
+    def _get_config_snapshot(self) -> tuple[dict, str | None]:
         """
         Get a snapshot of the current runtime configuration.
+
+        Returns
+        -------
+        tuple[dict, str | None]
+            A tuple of (config snapshot, error message). Error message is None on success.
         """
+        if not os.path.exists(self.config_path):
+            message = f"ConfigProvider: Config file not found: {self.config_path}"
+            logging.warning(message)
+            return {}, message
+
         try:
-            if not os.path.exists(self.config_path):
-                logging.warning(
-                    f"ConfigProvider: Config file not found: {self.config_path}"
-                )
-                return {}
+            with open(self.config_path, "r", encoding="utf-8") as f:
+                return json5.load(f), None
 
-            with open(self.config_path, "r") as f:
-                return json5.load(f)
-
-        except Exception as e:
-            logging.error(f"Failed to read config file {self.config_path}: {e}")
-            return {}
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            message = f"Failed to read config file {self.config_path}: {e}"
+            logging.error(message)
+            return {}, message
 
     def stop(self):
         """
