@@ -1,3 +1,5 @@
+"""Pydantic models for LLM action outputs."""
+
 from pydantic import BaseModel, Field
 
 

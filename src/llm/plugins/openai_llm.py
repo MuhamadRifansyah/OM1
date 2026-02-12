@@ -1,3 +1,6 @@
+"""OpenAI-backed LLM implementation."""
+# pylint: disable=duplicate-code
+
 import logging
 import time
 import typing as T
@@ -30,7 +33,7 @@ class OpenAIModel(str, Enum):
     GPT_5_2 = "gpt-5.2"
 
 
-class OpenAIConfig(LLMConfig):
+class OpenAIConfig(LLMConfig):  # pylint: disable=too-few-public-methods
     """OpenAI-specific configuration with model enum."""
 
     base_url: T.Optional[str] = Field(
@@ -43,7 +46,7 @@ class OpenAIConfig(LLMConfig):
     )
 
 
-class OpenAILLM(LLM[R]):
+class OpenAILLM(LLM[R]):  # pylint: disable=too-few-public-methods
     """
     An OpenAI-based Language Learning Model implementation with function call support.
 
@@ -85,7 +88,7 @@ class OpenAILLM(LLM[R]):
     @AvatarLLMState.trigger_thinking()
     @LLMHistoryManager.update_history()
     async def ask(
-        self, prompt: str, messages: T.List[T.Dict[str, str]] = []
+        self, prompt: str, messages: T.Optional[T.List[T.Dict[str, str]]] = None
     ) -> T.Optional[R]:
         """
         Send a prompt to the OpenAI API and get a structured response.
@@ -103,9 +106,12 @@ class OpenAILLM(LLM[R]):
             Parsed response matching the output_model structure, or None if
             parsing fails.
         """
+        if messages is None:
+            messages = []
+
         try:
-            logging.info(f"OpenAI input: {prompt}")
-            logging.info(f"OpenAI messages: {messages}")
+            logging.info("OpenAI input: %s", prompt)
+            logging.info("OpenAI messages: %s", messages)
 
             self.io_provider.llm_start_time = time.time()
             self.io_provider.set_llm_prompt(prompt)
@@ -132,8 +138,10 @@ class OpenAILLM(LLM[R]):
             self.io_provider.llm_end_time = time.time()
 
             if message.tool_calls:
-                logging.info(f"Received {len(message.tool_calls)} function calls")
-                logging.info(f"Function calls: {message.tool_calls}")
+                logging.info(
+                    "Received %d function calls", len(message.tool_calls)
+                )
+                logging.info("Function calls: %s", message.tool_calls)
 
                 function_call_data = [
                     {
@@ -152,6 +160,6 @@ class OpenAILLM(LLM[R]):
 
             return None
 
-        except Exception as e:
-            logging.error(f"OpenAI API error: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("OpenAI API error: %s", e)
             return None

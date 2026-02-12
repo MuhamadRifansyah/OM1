@@ -1,3 +1,6 @@
+"""Qwen-backed LLM implementation."""
+# pylint: disable=duplicate-code
+
 import json
 import logging
 import re
@@ -51,12 +54,12 @@ def _parse_qwen_tool_calls(text: str) -> list:
                         },
                     }
                 )
-        except Exception:
+        except Exception:  # pylint: disable=broad-exception-caught
             continue
     return tool_calls
 
 
-class QwenLLM(LLM[R]):
+class QwenLLM(LLM[R]):  # pylint: disable=too-few-public-methods
     """
     Local Qwen LLM implementation using OpenAI-compatible API.
 
@@ -112,7 +115,7 @@ class QwenLLM(LLM[R]):
     @AvatarLLMState.trigger_thinking()
     @LLMHistoryManager.update_history()
     async def ask(
-        self, prompt: str, messages: T.List[T.Dict[str, T.Any]] = []
+        self, prompt: str, messages: T.Optional[T.List[T.Dict[str, T.Any]]] = None
     ) -> R | None:
         """
         Send prompt to local Qwen model and get structured response.
@@ -129,9 +132,12 @@ class QwenLLM(LLM[R]):
         R or None
             Parsed response with actions, or None if parsing fails.
         """
+        if messages is None:
+            messages = []
+
         try:
-            logging.info(f"Qwen input: {prompt}")
-            logging.info(f"Qwen messages: {messages}")
+            logging.info("Qwen input: %s", prompt)
+            logging.info("Qwen messages: %s", messages)
 
             self.io_provider.llm_start_time = time.time()
             self.io_provider.set_llm_prompt(prompt)
@@ -173,8 +179,8 @@ class QwenLLM(LLM[R]):
                 tool_calls = _parse_qwen_tool_calls(message.content)
 
             if tool_calls:
-                logging.info(f"Received {len(tool_calls)} function calls")
-                logging.info(f"Function calls: {tool_calls}")
+                logging.info("Received %d function calls", len(tool_calls))
+                logging.info("Function calls: %s", tool_calls)
 
                 function_call_data = [
                     {
@@ -198,6 +204,6 @@ class QwenLLM(LLM[R]):
                 return T.cast(R, result)
 
             return None
-        except Exception as e:
-            logging.error(f"Qwen LLM error: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Qwen LLM error: %s", e)
             return None

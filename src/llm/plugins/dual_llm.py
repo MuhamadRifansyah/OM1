@@ -1,3 +1,5 @@
+"""Dual LLM implementation that races local and cloud models."""
+
 import asyncio
 import json
 import logging
@@ -35,7 +37,7 @@ def _extract_voice_input(prompt: str) -> str:
     return ""
 
 
-class DualLLMConfig(LLMConfig):
+class DualLLMConfig(LLMConfig):  # pylint: disable=too-few-public-methods
     """
     Configuration for DualLLM.
 
@@ -67,7 +69,7 @@ class DualLLMConfig(LLMConfig):
     )
 
 
-class DualLLM(LLM[R]):
+class DualLLM(LLM[R]):  # pylint: disable=too-few-public-methods
     """
     Dual LLM that races local and cloud LLMs with three selection rules:
     1. Both in time → pick one with function calls, or evaluate quality if both have
@@ -117,13 +119,13 @@ class DualLLM(LLM[R]):
 
         cloud_cfg["api_key"] = self._config.api_key
 
-        LocalLLMClass = get_llm_class(local_type)
-        CloudLLMClass = get_llm_class(cloud_type)
+        local_llm_class = get_llm_class(local_type)
+        cloud_llm_class = get_llm_class(cloud_type)
 
-        self._local_llm: LLM = LocalLLMClass(
+        self._local_llm: LLM = local_llm_class(
             config=LLMConfig(**local_cfg), available_actions=available_actions
         )
-        self._cloud_llm: LLM = CloudLLMClass(
+        self._cloud_llm: LLM = cloud_llm_class(
             config=LLMConfig(**cloud_cfg), available_actions=available_actions
         )
 
@@ -163,8 +165,8 @@ class DualLLM(LLM[R]):
         try:
             result = await llm.ask(prompt, messages)
             return {"result": result, "time": time.time() - start, "source": source}
-        except Exception as e:
-            logging.error(f"{source} LLM error: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("%s LLM error: %s", source, e)
             return {"result": None, "time": time.time() - start, "source": source}
 
     def _has_function_calls(self, entry: dict) -> bool:
@@ -216,24 +218,22 @@ class DualLLM(LLM[R]):
                 for a in cloud_entry["result"].actions
             ]
 
-            eval_prompt = f"""You are evaluating two AI responses to determine which better answers the user's question.
-
-Original User Question/Context:
-{prompt[:500]}
-
-Response A (local model):
-{json.dumps(local_actions, indent=2)}
-
-Response B (cloud model):
-{json.dumps(cloud_actions, indent=2)}
-
-Evaluate based on:
-1. Relevance - Which response better addresses the user's question?
-2. Completeness - Does it fully answer what was asked?
-3. Appropriateness - Are the actions suitable for the context?
-4. Quality - Is the content natural and engaging?
-
-Respond with ONLY a single word: either "A" or "B" for the better response."""
+            eval_prompt = (
+                "You are evaluating two AI responses to determine which better "
+                "answers the user's question.\n\n"
+                "Original User Question/Context:\n"
+                f"{prompt[:500]}\n\n"
+                "Response A (local model):\n"
+                f"{json.dumps(local_actions, indent=2)}\n\n"
+                "Response B (cloud model):\n"
+                f"{json.dumps(cloud_actions, indent=2)}\n\n"
+                "Evaluate based on:\n"
+                "1. Relevance - Which response better addresses the user's question?\n"
+                "2. Completeness - Does it fully answer what was asked?\n"
+                "3. Appropriateness - Are the actions suitable for the context?\n"
+                "4. Quality - Is the content natural and engaging?\n\n"
+                'Respond with ONLY a single word: either "A" or "B" for the better response.'
+            )
 
             response = await self._eval_client.chat.completions.create(
                 model=self._eval_model,
@@ -254,8 +254,10 @@ Respond with ONLY a single word: either "A" or "B" for the better response."""
 
             result = content.strip().upper()
             return "local" if "A" in result else "cloud"
-        except Exception as e:
-            logging.warning(f"LLM quality evaluation failed, defaulting to local: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.warning(
+                "LLM quality evaluation failed, defaulting to local: %s", e
+            )
             return "local"
 
     async def _select_best(
@@ -294,8 +296,9 @@ Respond with ONLY a single word: either "A" or "B" for the better response."""
 
     @AvatarLLMState.trigger_thinking()
     @LLMHistoryManager.update_history()
+    # pylint: disable=too-many-locals,too-many-branches
     async def ask(
-        self, prompt: str, messages: T.List[T.Dict[str, T.Any]] = []
+        self, prompt: str, messages: T.Optional[T.List[T.Dict[str, T.Any]]] = None
     ) -> R | None:
         """
         Send prompt to both LLMs and select the best response.
@@ -305,13 +308,16 @@ Respond with ONLY a single word: either "A" or "B" for the better response."""
         prompt : str
             The input prompt to send.
         messages : list of dict, optional
-            Conversation history (default: []).
+            Conversation history.
 
         Returns
         -------
         R or None
             Parsed response matching the output model, or None if failed.
         """
+        if messages is None:
+            messages = []
+
         try:
             self.io_provider.llm_start_time = time.time()
             self.io_provider.set_llm_prompt(prompt)
@@ -364,13 +370,16 @@ Respond with ONLY a single word: either "A" or "B" for the better response."""
             elif len(in_time) == 1:
                 chosen = list(in_time.values())[0]
                 logging.debug(
-                    f"One LLM responded in time, using its response. {chosen['source']} LLM selected."
+                    "One LLM responded in time, using its response. %s LLM selected.",
+                    chosen["source"],
                 )
                 # Cancel the other task
                 for name, task in tasks.items():
                     if name not in in_time:
                         task.cancel()
-                        logging.debug(f"Cancelled {name} LLM task due to timeout.")
+                        logging.debug(
+                            "Cancelled %s LLM task due to timeout.", name
+                        )
 
             # Neither in time → wait for first to complete
             else:
@@ -384,11 +393,14 @@ Respond with ONLY a single word: either "A" or "B" for the better response."""
                     )
                     chosen = list(done)[0].result()
                     logging.debug(
-                        f"Using first completed LLM response from {chosen['source']} LLM."
+                        "Using first completed LLM response from %s LLM.",
+                        chosen["source"],
                     )
                     for task in rest:
                         task.cancel()
-                        logging.debug(f"Cancelled {task} LLM task due to timeout.")
+                        logging.debug(
+                            "Cancelled %s LLM task due to timeout.", task
+                        )
                 else:
                     # Both already completed (just late)
                     results = [t.result() for t in tasks.values()]
@@ -400,6 +412,6 @@ Respond with ONLY a single word: either "A" or "B" for the better response."""
                 return T.cast(R, chosen["result"])
             return None
 
-        except Exception as e:
-            logging.error(f"DualLLM error: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("DualLLM error: %s", e)
             return None

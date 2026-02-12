@@ -41,7 +41,10 @@ def generate_function_schema_from_action(action) -> dict:
             properties[field_name] = {
                 "type": "string",
                 "enum": enum_values,
-                "description": f"The {field_name} to perform. Must be one of: {', '.join(enum_values)}",
+                "description": (
+                    f"The {field_name} to perform. Must be one of: "
+                    f"{', '.join(enum_values)}"
+                ),
             }
         elif isinstance(field_type, str):
             properties[field_name] = {
@@ -108,11 +111,11 @@ def generate_function_schemas_from_actions(actions: list) -> list[dict]:
                 schema = generate_function_schema_from_action(action)
                 schemas.append(schema)
                 logging.debug(
-                    f"Generated function schema for {action.llm_label}: {schema}"
+                    "Generated function schema for %s: %s", action.llm_label, schema
                 )
-            except Exception as e:
+            except Exception as e:  # pylint: disable=broad-exception-caught
                 logging.error(
-                    f"Error generating function schema for {action.llm_label}: {e}"
+                    "Error generating function schema for %s: %s", action.llm_label, e
                 )
 
     return schemas
@@ -145,7 +148,7 @@ def convert_function_calls_to_actions(function_calls: list[dict]) -> list[Action
                     args = json.loads(function_args)
                 except json.JSONDecodeError:
                     logging.error(
-                        f"Failed to parse function arguments: {function_args}"
+                        "Failed to parse function arguments: %s", function_args
                     )
                     continue
             else:
@@ -169,11 +172,14 @@ def convert_function_calls_to_actions(function_calls: list[dict]) -> list[Action
             actions.append(action)
 
             logging.info(
-                f"Converted function call {function_name}({args}) to action: {action}"
+                "Converted function call %s(%s) to action: %s",
+                function_name,
+                args,
+                action,
             )
 
-        except Exception as e:
-            logging.error(f"Error converting function call to action: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Error converting function call to action: %s", e)
             continue
 
     return actions

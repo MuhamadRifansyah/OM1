@@ -1,3 +1,5 @@
+"""LLM base types and loader utilities."""
+
 import importlib
 import inspect
 import logging
@@ -89,7 +91,7 @@ class LLMConfig(BaseModel):
             self.extra_params[key] = value
 
 
-class LLM(T.Generic[R]):
+class LLM(T.Generic[R]):  # pylint: disable=too-few-public-methods
     """
     Base class for Language Learning Model implementations.
 
@@ -124,7 +126,7 @@ class LLM(T.Generic[R]):
                 self._available_actions
             )
             logging.info(
-                f"LLM initialized with {len(self.function_schemas)} function schemas"
+                "LLM initialized with %d function schemas", len(self.function_schemas)
             )
 
         # Set up the IO provider
@@ -134,7 +136,7 @@ class LLM(T.Generic[R]):
         self._skip_state_management: bool = False
 
     async def ask(
-        self, prompt: str, messages: T.List[T.Dict[str, str]] = []
+        self, prompt: str, messages: T.Optional[T.List[T.Dict[str, str]]] = None
     ) -> T.Optional[R]:
         """
         Send a prompt to the LLM and receive a typed response.
@@ -192,8 +194,8 @@ def find_module_with_class(class_name: str) -> T.Optional[str]:
             if re.search(pattern, content, re.MULTILINE):
                 return plugin_file[:-3]
 
-        except Exception as e:
-            logging.warning(f"Could not read {plugin_file}: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.warning("Could not read %s: %s", plugin_file, e)
             continue
 
     return None
@@ -229,15 +231,17 @@ def get_llm_class(class_name: str) -> T.Type[LLM]:
         ):
             raise ValueError(f"'{class_name}' is not a valid LLM subclass")
 
-        logging.debug(f"Got LLM class {class_name} from {module_name}.py")
+        logging.debug("Got LLM class %s from %s.py", class_name, module_name)
         return llm_class
 
     except ImportError as e:
-        raise ValueError(f"Could not import LLM module '{module_name}': {e}")
-    except AttributeError:
+        raise ValueError(
+            f"Could not import LLM module '{module_name}': {e}"
+        ) from e
+    except AttributeError as exc:
         raise ValueError(
             f"Class '{class_name}' not found in LLM module '{module_name}'"
-        )
+        ) from exc
 
 
 def load_llm(
@@ -293,12 +297,14 @@ def load_llm(
         else:
             config = LLMConfig(**(config_dict if isinstance(config_dict, dict) else {}))
 
-        logging.debug(f"Loaded LLM {class_name} from {module_name}.py")
+        logging.debug("Loaded LLM %s from %s.py", class_name, module_name)
         return llm_class(config=config, available_actions=available_actions)
 
     except ImportError as e:
-        raise ValueError(f"Could not import LLM module '{module_name}': {e}")
-    except AttributeError:
+        raise ValueError(
+            f"Could not import LLM module '{module_name}': {e}"
+        ) from e
+    except AttributeError as exc:
         raise ValueError(
             f"Class '{class_name}' not found in LLM module '{module_name}'"
-        )
+        ) from exc

@@ -1,3 +1,6 @@
+"""Ollama-backed LLM implementation."""
+# pylint: disable=duplicate-code
+
 import json
 import logging
 import time
@@ -15,7 +18,7 @@ from providers.llm_history_manager import LLMHistoryManager
 R = T.TypeVar("R", bound=BaseModel)
 
 
-class OllamaLLMConfig(LLMConfig):
+class OllamaLLMConfig(LLMConfig):  # pylint: disable=too-few-public-methods
     """
     Configuration for Ollama LLM.
 
@@ -77,11 +80,12 @@ class OllamaLLM(LLM[R]):
 
         # Initialize history manager
         self.history_manager = LLMHistoryManager(
-            self._config, self._client  # type: ignore
+            self._config,
+            self._client,  # type: ignore
         )
 
-        logging.info(f"OllamaLLM initialized with model: {config.model}")
-        logging.info(f"Ollama endpoint: {self._chat_url}")
+        logging.info("OllamaLLM initialized with model: %s", config.model)
+        logging.info("Ollama endpoint: %s", self._chat_url)
 
     def _convert_tools_to_ollama_format(self) -> T.List[T.Dict]:
         """
@@ -111,8 +115,9 @@ class OllamaLLM(LLM[R]):
 
     @AvatarLLMState.trigger_thinking()
     @LLMHistoryManager.update_history()
+    # pylint: disable=too-many-locals
     async def ask(
-        self, prompt: str, messages: T.List[T.Dict[str, str]] = []
+        self, prompt: str, messages: T.Optional[T.List[T.Dict[str, str]]] = None
     ) -> T.Optional[R]:
         """
         Send a prompt to Ollama and get a structured response.
@@ -130,9 +135,12 @@ class OllamaLLM(LLM[R]):
             Parsed response matching the output_model structure, or None if
             parsing fails.
         """
+        if messages is None:
+            messages = []
+
         try:
-            logging.info(f"Ollama input: {prompt}")
-            logging.debug(f"Ollama messages: {messages}")
+            logging.info("Ollama input: %s", prompt)
+            logging.debug("Ollama messages: %s", messages)
 
             self.io_provider.llm_start_time = time.time()
             self.io_provider.set_llm_prompt(prompt)
@@ -157,7 +165,9 @@ class OllamaLLM(LLM[R]):
             if tools:
                 payload["tools"] = tools
 
-            logging.debug(f"Ollama request payload: {json.dumps(payload, indent=2)}")
+            logging.debug(
+                "Ollama request payload: %s", json.dumps(payload, indent=2)
+            )
 
             response = await self._client.post(
                 self._chat_url,
@@ -166,21 +176,23 @@ class OllamaLLM(LLM[R]):
 
             if response.status_code != 200:
                 logging.error(
-                    f"Ollama API error: {response.status_code} - {response.text}"
+                    "Ollama API error: %s - %s", response.status_code, response.text
                 )
                 return None
 
             result = response.json()
             self.io_provider.llm_end_time = time.time()
 
-            logging.debug(f"Ollama response: {json.dumps(result, indent=2)}")
+            logging.debug("Ollama response: %s", json.dumps(result, indent=2))
 
             message = result.get("message", {})
 
             tool_calls = message.get("tool_calls", [])
             if tool_calls:
-                logging.info(f"Received {len(tool_calls)} function calls from Ollama")
-                logging.info(f"Function calls: {tool_calls}")
+                logging.info(
+                    "Received %d function calls from Ollama", len(tool_calls)
+                )
+                logging.info("Function calls: %s", tool_calls)
 
                 function_call_data = []
                 for tc in tool_calls:
@@ -206,18 +218,20 @@ class OllamaLLM(LLM[R]):
 
         except httpx.ConnectError as e:
             logging.error(
-                f"Cannot connect to Ollama at {self._base_url}. Is Ollama running?"
+                "Cannot connect to Ollama at %s. Is Ollama running?", self._base_url
             )
             logging.error("Start Ollama with: ollama serve")
-            logging.error(f"Error: {e}")
+            logging.error("Error: %s", e)
             return None
         except httpx.TimeoutException as e:
-            logging.error(f"Ollama request timed out after {self._config.timeout}s")
+            logging.error(
+                "Ollama request timed out after %ss", self._config.timeout
+            )
             logging.error("Try increasing timeout or using a smaller model")
-            logging.error(f"Error: {e}")
+            logging.error("Error: %s", e)
             return None
-        except Exception as e:
-            logging.error(f"Ollama API error: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("Ollama API error: %s", e)
             return None
 
     async def close(self):

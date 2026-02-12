@@ -1,3 +1,6 @@
+"""OpenRouter-backed LLM implementation."""
+# pylint: disable=duplicate-code
+
 import logging
 import time
 import typing as T
@@ -29,7 +32,7 @@ class OpenRouterModel(str, Enum):
     LLAMA_3_3_70B = "meta-llama/llama-3.3-70b-instruct"
 
 
-class OpenRouterConfig(LLMConfig):
+class OpenRouterConfig(LLMConfig):  # pylint: disable=too-few-public-methods
     """OpenRouter-specific configuration with model enum."""
 
     base_url: T.Optional[str] = Field(
@@ -42,7 +45,7 @@ class OpenRouterConfig(LLMConfig):
     )
 
 
-class OpenRouter(LLM[R]):
+class OpenRouter(LLM[R]):  # pylint: disable=too-few-public-methods
     """
     An OpenRouter-based Language Learning Model implementation with function call support.
 
@@ -84,7 +87,7 @@ class OpenRouter(LLM[R]):
     @AvatarLLMState.trigger_thinking()
     @LLMHistoryManager.update_history()
     async def ask(
-        self, prompt: str, messages: T.List[T.Dict[str, str]] = []
+        self, prompt: str, messages: T.Optional[T.List[T.Dict[str, str]]] = None
     ) -> T.Optional[R]:
         """
         Send a prompt to the OpenRouter API and get a structured response.
@@ -102,9 +105,12 @@ class OpenRouter(LLM[R]):
             Parsed response matching the output_model structure, or None if
             parsing fails.
         """
+        if messages is None:
+            messages = []
+
         try:
-            logging.info(f"OpenRouter input: {prompt}")
-            logging.info(f"OpenRouter messages: {messages}")
+            logging.info("OpenRouter input: %s", prompt)
+            logging.info("OpenRouter messages: %s", messages)
 
             self.io_provider.llm_start_time = time.time()
             self.io_provider.set_llm_prompt(prompt)
@@ -131,8 +137,10 @@ class OpenRouter(LLM[R]):
             self.io_provider.llm_end_time = time.time()
 
             if message.tool_calls:
-                logging.info(f"Received {len(message.tool_calls)} function calls")
-                logging.info(f"Function calls: {message.tool_calls}")
+                logging.info(
+                    "Received %d function calls", len(message.tool_calls)
+                )
+                logging.info("Function calls: %s", message.tool_calls)
 
                 function_call_data = [
                     {
@@ -147,11 +155,11 @@ class OpenRouter(LLM[R]):
                 actions = convert_function_calls_to_actions(function_call_data)
 
                 result = CortexOutputModel(actions=actions)
-                logging.info(f"OpenRouter function call output: {result}")
+                logging.info("OpenRouter function call output: %s", result)
                 return T.cast(R, result)
 
             return None
 
-        except Exception as e:
-            logging.error(f"OpenRouter API error: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("OpenRouter API error: %s", e)
             return None

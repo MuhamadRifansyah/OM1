@@ -1,3 +1,6 @@
+"""DeepSeek-backed LLM implementation."""
+# pylint: disable=duplicate-code
+
 import logging
 import time
 import typing as T
@@ -21,7 +24,7 @@ class DeepSeekModel(str, Enum):
     DEEPSEEK_CHAT = "deepseek-chat"
 
 
-class DeepSeekConfig(LLMConfig):
+class DeepSeekConfig(LLMConfig):  # pylint: disable=too-few-public-methods
     """DeepSeek-specific configuration with model enum."""
 
     base_url: T.Optional[str] = Field(
@@ -34,7 +37,7 @@ class DeepSeekConfig(LLMConfig):
     )
 
 
-class DeepSeekLLM(LLM[R]):
+class DeepSeekLLM(LLM[R]):  # pylint: disable=too-few-public-methods
     """
     A DeepSeek-based Language Learning Model implementation.
 
@@ -75,7 +78,7 @@ class DeepSeekLLM(LLM[R]):
     @AvatarLLMState.trigger_thinking()
     @LLMHistoryManager.update_history()
     async def ask(
-        self, prompt: str, messages: T.List[T.Dict[str, str]] = []
+        self, prompt: str, messages: T.Optional[T.List[T.Dict[str, str]]] = None
     ) -> T.Optional[R]:
         """
         Send a prompt to the DeepSeek API and get a structured response.
@@ -93,9 +96,12 @@ class DeepSeekLLM(LLM[R]):
             Parsed response matching the output_model structure, or None if
             parsing fails.
         """
+        if messages is None:
+            messages = []
+
         try:
-            logging.debug(f"DeepSeek LLM input: {prompt}")
-            logging.debug(f"DeepSeek LLM messages: {messages}")
+            logging.debug("DeepSeek LLM input: %s", prompt)
+            logging.debug("DeepSeek LLM messages: %s", messages)
 
             self.io_provider.llm_start_time = time.time()
             self.io_provider.set_llm_prompt(prompt)
@@ -122,8 +128,10 @@ class DeepSeekLLM(LLM[R]):
             self.io_provider.llm_end_time = time.time()
 
             if message.tool_calls:
-                logging.info(f"Received {len(message.tool_calls)} function calls")
-                logging.info(f"Function calls: {message.tool_calls}")
+                logging.info(
+                    "Received %d function calls", len(message.tool_calls)
+                )
+                logging.info("Function calls: %s", message.tool_calls)
 
                 function_call_data = [
                     {
@@ -138,10 +146,10 @@ class DeepSeekLLM(LLM[R]):
                 actions = convert_function_calls_to_actions(function_call_data)
 
                 result = CortexOutputModel(actions=actions)
-                logging.info(f"DeepSeek LLM function call output: {result}")
+                logging.info("DeepSeek LLM function call output: %s", result)
                 return T.cast(R, result)
 
             return None
-        except Exception as e:
-            logging.error(f"DeepSeek API error: {e}")
+        except Exception as e:  # pylint: disable=broad-exception-caught
+            logging.error("DeepSeek API error: %s", e)
             return None
