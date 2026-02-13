@@ -1,3 +1,5 @@
+"""Unit tests for CLI config discovery and validation helpers."""
+
 import os
 from unittest.mock import MagicMock, mock_open, patch
 
@@ -90,6 +92,20 @@ def test_handles_syntax_errors_gracefully(tmp_path):
     test_file = tmp_path / "broken.py"
     test_file.write_text("class BrokenClass\n    # Missing colon\n")
     assert _check_class_in_dir(str(tmp_path), "BrokenClass") is False
+
+
+def test_check_class_in_dir_collects_scan_errors(tmp_path):
+    """Test that scanner errors are reported when requested."""
+    test_file = tmp_path / "broken.py"
+    test_file.write_text("class BrokenClass\n    # Missing colon\n")
+
+    scan_errors = []
+    result = _check_class_in_dir(str(tmp_path), "MissingClass", scan_errors=scan_errors)
+
+    assert result is False
+    assert len(scan_errors) == 1
+    assert "broken.py" in scan_errors[0]
+    assert "SyntaxError" in scan_errors[0]
 
 
 def test_check_input_exists():
@@ -221,7 +237,6 @@ def test_validate_mode_components_valid():
         patch("cli._check_llm_exists") as mock_llm,
         patch("cli._check_action_exists") as mock_action,
     ):
-
         mock_input.return_value = True
         mock_llm.return_value = True
         mock_action.return_value = True
@@ -235,8 +250,8 @@ def test_validate_mode_components_valid():
         errors, warnings = _validate_mode_components(
             "test_mode", mode_data, verbose=False
         )
-        assert errors == []
-        assert warnings == []
+        assert not errors
+        assert not warnings
 
 
 def test_validate_mode_components_missing_input():
@@ -248,11 +263,35 @@ def test_validate_mode_components_missing_input():
             "agent_inputs": [{"type": "MissingInput"}],
         }
 
-        errors, warnings = _validate_mode_components(
+        errors, _warnings = _validate_mode_components(
             "test_mode", mode_data, verbose=False, allow_missing=False
         )
         assert len(errors) == 1
         assert "MissingInput" in errors[0]
+
+
+def test_validate_mode_components_missing_input_reports_scan_errors():
+    """Test that missing input reports parser/read diagnostics when available."""
+
+    def missing_input_with_scan_errors(_input_type, scan_errors=None):
+        if scan_errors is not None:
+            scan_errors.append("broken.py: SyntaxError: invalid syntax")
+        return False
+
+    with patch("cli._check_input_exists", side_effect=missing_input_with_scan_errors):
+        mode_data = {
+            "agent_inputs": [{"type": "MissingInput"}],
+        }
+
+        errors, warnings = _validate_mode_components(
+            "test_mode", mode_data, verbose=False, allow_missing=False
+        )
+
+        assert len(errors) == 1
+        assert "MissingInput" in errors[0]
+        assert "scan errors in plugin files" in errors[0]
+        assert "broken.py" in errors[0]
+        assert not warnings
 
 
 def test_validate_mode_components_missing_input_allowed():
@@ -281,8 +320,8 @@ def test_validate_mode_components_skip_inputs():
     errors, warnings = _validate_mode_components(
         "test_mode", mode_data, verbose=False, skip_inputs=True
     )
-    assert errors == []
-    assert warnings == []
+    assert not errors
+    assert not warnings
 
 
 def test_validate_mode_components_simulators():
@@ -294,10 +333,10 @@ def test_validate_mode_components_simulators():
             "simulators": [{"type": "TestSimulator"}],
         }
 
-        errors, warnings = _validate_mode_components(
+        errors, _warnings = _validate_mode_components(
             "test_mode", mode_data, verbose=False
         )
-        assert errors == []
+        assert not errors
         mock_simulator.assert_called_once_with("TestSimulator")
 
 
@@ -310,10 +349,10 @@ def test_validate_mode_components_backgrounds():
             "backgrounds": [{"type": "TestBackground"}],
         }
 
-        errors, warnings = _validate_mode_components(
+        errors, _warnings = _validate_mode_components(
             "test_mode", mode_data, verbose=False
         )
-        assert errors == []
+        assert not errors
         mock_background.assert_called_once_with("TestBackground")
 
 
@@ -323,7 +362,6 @@ def test_validate_components_multi_mode():
         patch("cli._validate_mode_components") as mock_validate_mode,
         patch("cli._check_llm_exists") as mock_llm,
     ):
-
         mock_llm.return_value = True
         mock_validate_mode.return_value = ([], [])
 
@@ -369,18 +407,16 @@ def test_list_configs_categorizes_correctly(capsys):
         patch("os.path.exists") as mock_exists,
         patch("builtins.open", new_callable=mock_open) as mock_file,
     ):
-
         mock_exists.return_value = True
         mock_listdir.return_value = ["mode_config.json5", "single_config.json5"]
 
         # Create a side effect to return different content
-        def open_side_effect(path, mode):
+        def open_side_effect(path, _mode):
             if "mode_config" in str(path):
                 return mock_open(
                     read_data='{"modes": {}, "default_mode": "test"}'
                 ).return_value
-            else:
-                return mock_open(read_data='{"name": "single"}').return_value
+            return mock_open(read_data='{"name": "single"}').return_value
 
         mock_file.side_effect = open_side_effect
 
@@ -439,7 +475,6 @@ def test_validate_config_success(capsys):
         patch("cli._validate_components"),
         patch("cli._check_api_key"),
     ):
-
         mock_resolve.return_value = "/path/to/config.json5"
 
         validate_config("test", verbose=False, check_components=False)
@@ -453,7 +488,6 @@ def test_validate_config_invalid_json():
         patch("cli._resolve_config_path") as mock_resolve,
         patch("builtins.open", new_callable=mock_open, read_data="invalid json{"),
     ):
-
         mock_resolve.return_value = "/path/to/config.json5"
 
         with pytest.raises(typer.Exit):

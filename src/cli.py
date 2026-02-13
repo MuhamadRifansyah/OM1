@@ -1,19 +1,40 @@
+"""Command-line tools for listing, inspecting, and validating OM1 configs."""
+
 import ast
+import importlib
+import importlib.util
 import json
 import logging
 import multiprocessing as mp
 import os
 import traceback
+from dataclasses import dataclass, field
+from typing import Callable
 
 import dotenv
-import json5
 import typer
 from jsonschema import ValidationError, validate
 
 from runtime.config import load_mode_config
 from runtime.converter import convert_to_multi_mode
 
+json5 = (
+    importlib.import_module("json5")
+    if importlib.util.find_spec("json5")
+    else json
+)
+
 app = typer.Typer()
+
+
+def _get_mode_item_count(mode: object, loaded_attr: str, raw_attr_name: str) -> int:
+    """Get mode component count while avoiding direct protected-attribute access."""
+    loaded_items = getattr(mode, loaded_attr, None)
+    if loaded_items:
+        return len(loaded_items)
+
+    raw_items = getattr(mode, raw_attr_name, None)
+    return len(raw_items) if isinstance(raw_items, list) else 0
 
 
 @app.command()
@@ -63,8 +84,12 @@ def modes(config_name: str) -> None:
             print(f"  Frequency: {mode.hertz} Hz")
             if mode.timeout_seconds:
                 print(f"  Timeout: {mode.timeout_seconds} seconds")
-            print(f"  Inputs: {len(mode._raw_inputs)}")
-            print(f"  Actions: {len(mode._raw_actions)}")
+            print(
+                f"  Inputs: {_get_mode_item_count(mode, 'agent_inputs', '_raw_inputs')}"
+            )
+            print(
+                f"  Actions: {_get_mode_item_count(mode, 'agent_actions', '_raw_actions')}"
+            )
             if mode.lifecycle_hooks:
                 print(f"  Lifecycle Hooks: {len(mode.lifecycle_hooks)}")
             print()
@@ -87,11 +112,11 @@ def modes(config_name: str) -> None:
                 print(f"  Cooldown: {rule.cooldown_seconds}s")
             print()
 
-    except FileNotFoundError:
-        logging.error(f"Configuration file not found: {config_name}.json5")
-        raise typer.Exit(1)
+    except FileNotFoundError as exc:
+        logging.error("Configuration file not found: %s.json5", config_name)
+        raise typer.Exit(1) from exc
     except Exception as e:
-        logging.error(f"Error loading mode configuration: {e}")
+        logging.error("Error loading mode configuration: %s", e)
         raise typer.Exit(1)
 
 
@@ -115,12 +140,12 @@ def list_configs() -> None:
             config_path = os.path.join(config_dir, filename)
 
             try:
-                with open(config_path, "r") as f:
+                with open(config_path, "r", encoding="utf-8") as f:
                     raw_config = json5.load(f)
 
                 display_name = raw_config.get("name", config_name)
                 configs.append((config_name, display_name))
-            except Exception as _:
+            except (OSError, ValueError, TypeError, UnicodeError):
                 configs.append((config_name, "Invalid config"))
 
     print("-" * 32)
@@ -142,7 +167,10 @@ def validate_config(
     check_components: bool = typer.Option(
         True,
         "--check-components",
-        help="Verify that all components (inputs, LLMs, actions) exist in codebase (slower but thorough)",
+        help=(
+            "Verify that all components (inputs, LLMs, actions) exist in "
+            "codebase (slower but thorough)"
+        ),
     ),
     skip_inputs: bool = typer.Option(
         False,
@@ -187,102 +215,140 @@ def validate_config(
         uv run src/cli.py validate-config test --check-components --allow-missing
     """
     try:
-        # Resolve config path
         config_path = _resolve_config_path(config_name)
-
-        if verbose:
-            print(f"Validating: {config_path}")
-            print("-" * 50)
-
-        # Load and parse JSON5
-        try:
-            with open(config_path, "r") as f:
-                raw_config = json5.load(f)
-        except ValueError as e:
-            print("Error: Invalid JSON5 syntax")
-            print(f"   {e}")
-            raise typer.Exit(1)
-
-        if verbose:
-            print("JSON5 syntax valid")
-
-        # Schema validation
-        is_multi_mode = "modes" in raw_config and "default_mode" in raw_config
-        schema_file = (
-            "multi_mode_schema.json" if is_multi_mode else "single_mode_schema.json"
+        _print_validation_header(config_path, verbose)
+        raw_config = _load_raw_config(config_path)
+        raw_config = _validate_schema_and_convert(raw_config, verbose)
+        _validate_requested_components(
+            raw_config=raw_config,
+            verbose=verbose,
+            check_components=check_components,
+            skip_inputs=skip_inputs,
+            allow_missing=allow_missing,
         )
-        schema_path = os.path.join(
-            os.path.dirname(__file__), "../config/schema", schema_file
-        )
-
-        with open(schema_path, "r") as f:
-            schema = json.load(f)
-
-        validate(instance=raw_config, schema=schema)
-
-        raw_config = convert_to_multi_mode(raw_config)
-
-        if verbose:
-            print("Schema validation passed")
-
-        # Component validation (if requested)
-        if check_components:
-            if not verbose:
-                print(
-                    "Validating components (this may take a moment)...",
-                    end="",
-                    flush=True,
-                )
-            _validate_components(raw_config, verbose, skip_inputs, allow_missing)
-            if not verbose:
-                print("\rAll components validated successfully!           ")
-
-        # API key check (warning only)
         _check_api_key(raw_config, verbose)
-
-        # Success message
-        print()
-        print("=" * 50)
-        print("Configuration is valid!")
-        print("=" * 50)
-
-        if verbose:
-            _print_config_summary(raw_config)
-
-    except FileNotFoundError as e:
+        _print_validation_success(raw_config, verbose)
+    except FileNotFoundError as exc:
         print("Error: Configuration file not found")
-        print(f"   {e}")
-        raise typer.Exit(1)
+        print(f"   {exc}")
+        raise typer.Exit(1) from exc
+    except ValidationError as exc:
+        _print_schema_validation_error(exc, verbose)
+        raise typer.Exit(1) from exc
+    except ValueError as exc:
+        _print_value_validation_error(exc, verbose)
+        raise typer.Exit(1) from exc
+    except (OSError, TypeError, RuntimeError) as exc:
+        _print_unexpected_validation_error(exc, verbose)
+        raise typer.Exit(1) from exc
 
-    except ValueError as e:
-        if "Component validation" in str(e):
-            pass  # Already printed by _validate_components
-        else:
-            print("Error: Unexpected validation error")
-            print(f"   {e}")
-            if verbose:
 
-                traceback.print_exc()
-        raise typer.Exit(1)
+def _print_validation_header(config_path: str, verbose: bool) -> None:
+    """Print validation header output for verbose mode."""
+    if not verbose:
+        return
+    print(f"Validating: {config_path}")
+    print("-" * 50)
 
-    except ValidationError as e:
-        print("Error: Schema validation failed")
-        field_path = ".".join(str(p) for p in e.path) if e.path else "root"
-        print(f"   Field: {field_path}")
-        print(f"   Issue: {e.message}")
-        if verbose and e.schema:
-            print("\n   Schema requirement:")
-            print(f"   {e.schema}")
-        raise typer.Exit(1)
 
-    except Exception as e:
-        if "Component validation" not in str(e):
-            print("Error: Unexpected validation error")
-            print(f"   {e}")
-            if verbose:
+def _load_raw_config(config_path: str) -> dict:
+    """
+    Load and parse a configuration file as JSON5.
 
-                traceback.print_exc()
-        raise typer.Exit(1)
+    Raises
+    ------
+    ValueError
+        If JSON5 syntax is invalid.
+    """
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            return json5.load(f)
+    except ValueError as exc:
+        raise ValueError(f"Invalid JSON5 syntax: {exc}") from exc
+
+
+def _validate_schema_and_convert(raw_config: dict, verbose: bool) -> dict:
+    """Validate config schema and convert to multi-mode representation."""
+    if verbose:
+        print("JSON5 syntax valid")
+
+    is_multi_mode = "modes" in raw_config and "default_mode" in raw_config
+    schema_file = "multi_mode_schema.json" if is_multi_mode else "single_mode_schema.json"
+    schema_path = os.path.join(os.path.dirname(__file__), "../config/schema", schema_file)
+
+    with open(schema_path, "r", encoding="utf-8") as f:
+        schema = json.load(f)
+
+    validate(instance=raw_config, schema=schema)
+    converted_config = convert_to_multi_mode(raw_config)
+
+    if verbose:
+        print("Schema validation passed")
+
+    return converted_config
+
+
+def _validate_requested_components(
+    raw_config: dict,
+    verbose: bool,
+    check_components: bool,
+    skip_inputs: bool,
+    allow_missing: bool,
+) -> None:
+    """Run component checks if requested by CLI flags."""
+    if not check_components:
+        return
+
+    if not verbose:
+        print("Validating components (this may take a moment)...", end="", flush=True)
+    _validate_components(raw_config, verbose, skip_inputs, allow_missing)
+    if not verbose:
+        print("\rAll components validated successfully!           ")
+
+
+def _print_validation_success(raw_config: dict, verbose: bool) -> None:
+    """Print success output after validation completes."""
+    print()
+    print("=" * 50)
+    print("Configuration is valid!")
+    print("=" * 50)
+
+    if verbose:
+        _print_config_summary(raw_config)
+
+
+def _print_schema_validation_error(error: ValidationError, verbose: bool) -> None:
+    """Print schema-validation error details."""
+    print("Error: Schema validation failed")
+    field_path = ".".join(str(p) for p in error.path) if error.path else "root"
+    print(f"   Field: {field_path}")
+    print(f"   Issue: {error.message}")
+    if verbose and error.schema:
+        print("\n   Schema requirement:")
+        print(f"   {error.schema}")
+
+
+def _print_value_validation_error(error: ValueError, verbose: bool) -> None:
+    """Print value-based validation errors with targeted messaging."""
+    error_message = str(error)
+
+    if error_message.startswith("Component validation"):
+        return
+
+    if error_message.startswith("Invalid JSON5 syntax:"):
+        print("Error: Invalid JSON5 syntax")
+        print(f"   {error_message.removeprefix('Invalid JSON5 syntax: ').strip()}")
+        return
+
+    _print_unexpected_validation_error(error, verbose)
+
+
+def _print_unexpected_validation_error(error: Exception, verbose: bool) -> None:
+    """Print fallback error output for unexpected validation failures."""
+    print("Error: Unexpected validation error")
+    print(f"   {error}")
+    if verbose:
+        traceback.print_exc()
 
 
 def _resolve_config_path(config_name: str) -> str:
@@ -350,56 +416,169 @@ def _validate_components(
     ValueError
         If component validation fails and allow_missing is False
     """
-    errors = []
-    warnings = []
+    sink = _IssueSink(allow_missing=allow_missing)
 
     if verbose:
         print("Checking component existence...")
 
     try:
-        if "cortex_llm" in raw_config:
-            llm_type = raw_config["cortex_llm"].get("type")
-            if llm_type and verbose:
-                print(f"  Checking global LLM: {llm_type}")
-            if llm_type and not _check_llm_exists(llm_type):
-                msg = f"Global LLM type '{llm_type}' not found"
-                if allow_missing:
-                    warnings.append(msg)
-                else:
-                    errors.append(msg)
-
-        for mode_name, mode_data in raw_config.get("modes", {}).items():
-            if verbose:
-                print(f"  Validating mode: {mode_name}")
-            mode_errors, mode_warnings = _validate_mode_components(
-                mode_name, mode_data, verbose, skip_inputs, allow_missing
-            )
-            errors.extend(mode_errors)
-            warnings.extend(mode_warnings)
-
-    except Exception as e:
-        error_msg = f"Component validation error: {e}"
-        if allow_missing:
-            warnings.append(error_msg)
-        else:
-            errors.append(error_msg)
+        _validate_global_llm(raw_config, verbose, sink)
+        _validate_modes(
+            raw_config,
+            verbose,
+            skip_inputs,
+            sink,
+        )
+    except (AttributeError, KeyError, TypeError, ValueError, RuntimeError) as exc:
+        error_msg = f"Component validation error: {exc}"
+        sink.add(error_msg)
         if verbose:
-
             traceback.print_exc()
 
-    if warnings:
+    if sink.warnings:
         print("Component validation warnings:")
-        for warning in warnings:
+        for warning in sink.warnings:
             print(f"   - {warning}")
 
-    if errors:
+    if sink.errors:
         print("Component validation failed:")
-        for error in errors:
+        for error in sink.errors:
             print(f"   - {error}")
         raise ValueError("Component validation failed")
 
     if verbose:
         print("All components exist")
+
+
+@dataclass
+class _IssueSink:
+    """Collect validation issues in either warning or error buckets."""
+
+    allow_missing: bool
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+    def add(self, message: str) -> None:
+        """Append a message to warnings or errors based on allow-missing policy."""
+        if self.allow_missing:
+            self.warnings.append(message)
+            return
+        self.errors.append(message)
+
+
+@dataclass
+class _ModeValidationContext:
+    """Context shared across mode component validation helpers."""
+
+    mode_name: str
+    verbose: bool
+    sink: _IssueSink
+
+
+@dataclass(frozen=True)
+class _ComponentSpec:
+    """Specification for validating one mode component collection."""
+
+    config_key: str
+    group_label: str
+    value_key: str
+    display_label: str
+    missing_label: str
+    checker: Callable[..., bool]
+    supports_scan_errors: bool
+
+
+def _validate_global_llm(
+    raw_config: dict,
+    verbose: bool,
+    sink: _IssueSink,
+) -> None:
+    """Validate global LLM declaration."""
+    if "cortex_llm" not in raw_config:
+        return
+
+    llm_type = raw_config["cortex_llm"].get("type")
+    if not llm_type:
+        return
+
+    if verbose:
+        print(f"  Checking global LLM: {llm_type}")
+
+    llm_scan_errors: list[str] = []
+    if _check_llm_exists(llm_type, scan_errors=llm_scan_errors):
+        return
+
+    message = f"Global LLM type '{llm_type}' not found"
+    message += _format_scan_error_context(llm_scan_errors)
+    sink.add(message)
+
+
+def _validate_modes(
+    raw_config: dict,
+    verbose: bool,
+    skip_inputs: bool,
+    sink: _IssueSink,
+) -> None:
+    """Validate mode-specific components."""
+    for mode_name, mode_data in raw_config.get("modes", {}).items():
+        if verbose:
+            print(f"  Validating mode: {mode_name}")
+        mode_errors, mode_warnings = _validate_mode_components(
+            mode_name, mode_data, verbose, skip_inputs, sink.allow_missing
+        )
+        sink.errors.extend(mode_errors)
+        sink.warnings.extend(mode_warnings)
+
+
+def _validate_component_item(
+    context: _ModeValidationContext,
+    component_name: str,
+    spec: _ComponentSpec,
+    line_prefix: str = "      ",
+) -> None:
+    """Validate a single component entry and append diagnostics on failure."""
+    if context.verbose:
+        print(f"{line_prefix}{spec.display_label}: {component_name}", end=" ")
+
+    scan_errors: list[str] = []
+    if spec.supports_scan_errors:
+        exists = spec.checker(component_name, scan_errors=scan_errors)
+    else:
+        exists = spec.checker(component_name)
+
+    if exists:
+        if context.verbose:
+            print("OK")
+        return
+
+    message = (
+        f"[{context.mode_name}] {spec.missing_label} '{component_name}' not found"
+    )
+    message += _format_scan_error_context(scan_errors)
+    context.sink.add(message)
+
+    if context.verbose:
+        print("(warning)" if context.sink.allow_missing else "(not found)")
+
+
+def _validate_component_group(
+    context: _ModeValidationContext,
+    mode_data: dict,
+    spec: _ComponentSpec,
+) -> None:
+    """Validate a list of components under a mode config key."""
+    items = mode_data.get(spec.config_key, [])
+    if context.verbose and items:
+        print(f"    Checking {len(items)} {spec.group_label}...")
+
+    for item in items:
+        component_name = item.get(spec.value_key)
+        if component_name:
+            _validate_component_item(
+                context=context,
+                component_name=component_name,
+                spec=spec,
+            )
 
 
 def _validate_mode_components(
@@ -430,138 +609,113 @@ def _validate_mode_components(
     tuple
         (errors, warnings) lists
     """
-    errors = []
-    warnings = []
+    sink = _IssueSink(allow_missing=allow_missing)
+    context = _ModeValidationContext(mode_name=mode_name, verbose=verbose, sink=sink)
 
     try:
-        if not skip_inputs:
-            inputs = mode_data.get("agent_inputs", [])
-            if verbose and inputs:
-                print(f"    Checking {len(inputs)} inputs...")
-
-            for inp in inputs:
-                input_type = inp.get("type")
-                if input_type:
-                    if verbose:
-                        print(f"      Input: {input_type}", end=" ")
-                    if not _check_input_exists(input_type):
-                        msg = f"[{mode_name}] Input type '{input_type}' not found"
-                        if allow_missing:
-                            warnings.append(msg)
-                            if verbose:
-                                print("(warning)")
-                        else:
-                            errors.append(msg)
-                            if verbose:
-                                print("(not found)")
-                    else:
-                        if verbose:
-                            print("OK")
-        else:
+        if skip_inputs:
             if verbose:
                 print("    Skipping input validation")
+        else:
+            _validate_component_group(
+                context=context,
+                mode_data=mode_data,
+                spec=_ComponentSpec(
+                    config_key="agent_inputs",
+                    group_label="inputs",
+                    value_key="type",
+                    display_label="Input",
+                    missing_label="Input type",
+                    checker=_check_input_exists,
+                    supports_scan_errors=True,
+                ),
+            )
 
         if "cortex_llm" in mode_data:
             llm_type = mode_data["cortex_llm"].get("type")
             if llm_type:
-                if verbose:
-                    print(f"    LLM: {llm_type}", end=" ")
-                if not _check_llm_exists(llm_type):
-                    msg = f"[{mode_name}] LLM type '{llm_type}' not found"
-                    if allow_missing:
-                        warnings.append(msg)
-                        if verbose:
-                            print("(warning)")
-                    else:
-                        errors.append(msg)
-                        if verbose:
-                            print("(not found)")
-                else:
-                    if verbose:
-                        print("OK")
+                _validate_component_item(
+                    context=context,
+                    component_name=llm_type,
+                    spec=_ComponentSpec(
+                        config_key="cortex_llm",
+                        group_label="llm",
+                        value_key="type",
+                        display_label="LLM",
+                        missing_label="LLM type",
+                        checker=_check_llm_exists,
+                        supports_scan_errors=True,
+                    ),
+                    line_prefix="    ",
+                )
 
-        simulators = mode_data.get("simulators", [])
-        if verbose and simulators:
-            print(f"    Checking {len(simulators)} simulators...")
-
-        for sim in simulators:
-            sim_type = sim.get("type")
-            if sim_type:
-                if verbose:
-                    print(f"      Simulator: {sim_type}", end=" ")
-                if not _check_simulator_exists(sim_type):
-                    msg = f"[{mode_name}] Simulator type '{sim_type}' not found"
-                    if allow_missing:
-                        warnings.append(msg)
-                        if verbose:
-                            print("(warning)")
-                    else:
-                        errors.append(msg)
-                        if verbose:
-                            print("(not found)")
-                else:
-                    if verbose:
-                        print("OK")
-
-        actions = mode_data.get("agent_actions", [])
-        if verbose and actions:
-            print(f"    Checking {len(actions)} actions...")
-
-        for action in actions:
-            action_name = action.get("name")
-            if action_name:
-                if verbose:
-                    print(f"      Action: {action_name}", end=" ")
-                if not _check_action_exists(action_name):
-                    msg = f"[{mode_name}] Action '{action_name}' not found"
-                    if allow_missing:
-                        warnings.append(msg)
-                        if verbose:
-                            print("(warning)")
-                    else:
-                        errors.append(msg)
-                        if verbose:
-                            print("(not found)")
-                else:
-                    if verbose:
-                        print("OK")
-
-        backgrounds = mode_data.get("backgrounds", [])
-        if verbose and backgrounds:
-            print(f"    Checking {len(backgrounds)} backgrounds...")
-
-        for bg in backgrounds:
-            bg_type = bg.get("type")
-            if bg_type:
-                if verbose:
-                    print(f"      Background: {bg_type}", end=" ")
-                if not _check_background_exists(bg_type):
-                    msg = f"[{mode_name}] Background type '{bg_type}' not found"
-                    if allow_missing:
-                        warnings.append(msg)
-                        if verbose:
-                            print("(warning)")
-                    else:
-                        errors.append(msg)
-                        if verbose:
-                            print("(not found)")
-                else:
-                    if verbose:
-                        print("OK")
-
-    except Exception as e:
-        msg = f"[{mode_name}] Error during validation: {e}"
-        if allow_missing:
-            warnings.append(msg)
-        else:
-            errors.append(msg)
+        component_specs = [
+            _ComponentSpec(
+                config_key="simulators",
+                group_label="simulators",
+                value_key="type",
+                display_label="Simulator",
+                missing_label="Simulator type",
+                checker=_check_simulator_exists,
+                supports_scan_errors=True,
+            ),
+            _ComponentSpec(
+                config_key="agent_actions",
+                group_label="actions",
+                value_key="name",
+                display_label="Action",
+                missing_label="Action",
+                checker=_check_action_exists,
+                supports_scan_errors=False,
+            ),
+            _ComponentSpec(
+                config_key="backgrounds",
+                group_label="backgrounds",
+                value_key="type",
+                display_label="Background",
+                missing_label="Background type",
+                checker=_check_background_exists,
+                supports_scan_errors=True,
+            ),
+        ]
+        for spec in component_specs:
+            _validate_component_group(context=context, mode_data=mode_data, spec=spec)
+    except (AttributeError, KeyError, TypeError, ValueError, RuntimeError) as exc:
+        message = f"[{mode_name}] Error during validation: {exc}"
+        sink.add(message)
         if verbose:
-            print(f"    Error: {e}")
+            print(f"    Error: {exc}")
 
-    return errors, warnings
+    return sink.errors, sink.warnings
 
 
-def _check_class_in_dir(directory: str, class_name: str) -> bool:
+def _format_scan_error_context(scan_errors: list[str]) -> str:
+    """
+    Format scan errors into a concise diagnostic suffix.
+
+    Parameters
+    ----------
+    scan_errors : list[str]
+        Collected file scanning errors
+
+    Returns
+    -------
+    str
+        Human-readable diagnostic suffix, or empty string if no scan errors
+    """
+    if not scan_errors:
+        return ""
+
+    extra_count = len(scan_errors) - 1
+    if extra_count > 0:
+        return f" (scan errors in plugin files: {scan_errors[0]} +{extra_count} more)"
+
+    return f" (scan errors in plugin files: {scan_errors[0]})"
+
+
+def _check_class_in_dir(
+    directory: str, class_name: str, scan_errors: list[str] | None = None
+) -> bool:
     """
     Check if a class exists in any .py file in the given directory using AST.
 
@@ -589,12 +743,14 @@ def _check_class_in_dir(directory: str, class_name: str) -> bool:
                     for node in tree.body:
                         if isinstance(node, ast.ClassDef) and node.name == class_name:
                             return True
-            except Exception:
+            except (OSError, UnicodeError, SyntaxError, ValueError) as e:
+                if scan_errors is not None:
+                    scan_errors.append(f"{filename}: {type(e).__name__}: {e}")
                 continue
     return False
 
 
-def _check_input_exists(input_type: str) -> bool:
+def _check_input_exists(input_type: str, scan_errors: list[str] | None = None) -> bool:
     """
     Check if input type exists by searching for class definition in plugin files.
 
@@ -611,10 +767,10 @@ def _check_input_exists(input_type: str) -> bool:
     src_dir = os.path.dirname(__file__)
     plugins_dir = os.path.join(src_dir, "inputs", "plugins")
 
-    return _check_class_in_dir(plugins_dir, input_type)
+    return _check_class_in_dir(plugins_dir, input_type, scan_errors=scan_errors)
 
 
-def _check_llm_exists(llm_type: str) -> bool:
+def _check_llm_exists(llm_type: str, scan_errors: list[str] | None = None) -> bool:
     """
     Check if LLM type exists by searching for class definition in plugin files.
 
@@ -631,10 +787,12 @@ def _check_llm_exists(llm_type: str) -> bool:
     src_dir = os.path.dirname(__file__)
     plugins_dir = os.path.join(src_dir, "llm", "plugins")
 
-    return _check_class_in_dir(plugins_dir, llm_type)
+    return _check_class_in_dir(plugins_dir, llm_type, scan_errors=scan_errors)
 
 
-def _check_simulator_exists(sim_type: str) -> bool:
+def _check_simulator_exists(
+    sim_type: str, scan_errors: list[str] | None = None
+) -> bool:
     """
     Check if simulator type exists by searching for class definition in plugin files.
 
@@ -651,7 +809,7 @@ def _check_simulator_exists(sim_type: str) -> bool:
     src_dir = os.path.dirname(__file__)
     plugins_dir = os.path.join(src_dir, "simulators", "plugins")
 
-    return _check_class_in_dir(plugins_dir, sim_type)
+    return _check_class_in_dir(plugins_dir, sim_type, scan_errors=scan_errors)
 
 
 def _check_action_exists(action_name: str) -> bool:
@@ -673,7 +831,9 @@ def _check_action_exists(action_name: str) -> bool:
     return os.path.exists(interface_file)
 
 
-def _check_background_exists(bg_type: str) -> bool:
+def _check_background_exists(
+    bg_type: str, scan_errors: list[str] | None = None
+) -> bool:
     """
     Check if background type exists by searching for class definition in plugin files.
 
@@ -690,7 +850,7 @@ def _check_background_exists(bg_type: str) -> bool:
     src_dir = os.path.dirname(__file__)
     plugins_dir = os.path.join(src_dir, "backgrounds", "plugins")
 
-    return _check_class_in_dir(plugins_dir, bg_type)
+    return _check_class_in_dir(plugins_dir, bg_type, scan_errors=scan_errors)
 
 
 def _check_api_key(raw_config: dict, verbose: bool):
@@ -738,7 +898,6 @@ def _print_config_summary(raw_config: dict):
 
 
 if __name__ == "__main__":
-
     # Fix for Linux multiprocessing
     if mp.get_start_method(allow_none=True) != "spawn":
         mp.set_start_method("spawn")
