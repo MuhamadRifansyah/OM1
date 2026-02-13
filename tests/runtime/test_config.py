@@ -1,3 +1,8 @@
+"""Unit tests for runtime mode configuration loading and conversion."""
+
+import importlib
+import importlib.util
+import json
 import logging
 import os
 import tempfile
@@ -19,49 +24,58 @@ from runtime.config import (
     validate_config_schema,
 )
 
+json5 = importlib.import_module("json5") if importlib.util.find_spec("json5") else json
 
-@pytest.fixture
-def mock_sensor():
+
+def _set_raw_mode_field(
+    mode_config: ModeConfig, field_name: str, value: object
+) -> None:
+    """Set raw mode fields via setattr to avoid direct protected-member access."""
+    setattr(mode_config, field_name, value)
+
+
+@pytest.fixture(name="mock_sensor")
+def fixture_mock_sensor():
     """Mock sensor for testing."""
     mock = Mock()
     mock.config = Mock()
     return mock
 
 
-@pytest.fixture
-def mock_llm():
+@pytest.fixture(name="mock_llm")
+def fixture_mock_llm():
     """Mock LLM for testing."""
     mock = Mock()
     mock.config = Mock()
     return mock
 
 
-@pytest.fixture
-def mock_simulator():
+@pytest.fixture(name="mock_simulator")
+def fixture_mock_simulator():
     """Mock simulator for testing."""
     mock = Mock()
     mock.config = Mock()
     return mock
 
 
-@pytest.fixture
-def mock_action():
+@pytest.fixture(name="mock_action")
+def fixture_mock_action():
     """Mock action for testing."""
     mock = Mock()
     mock.config = Mock()
     return mock
 
 
-@pytest.fixture
-def mock_background():
+@pytest.fixture(name="mock_background")
+def fixture_mock_background():
     """Mock background for testing."""
     mock = Mock()
     mock.config = Mock()
     return mock
 
 
-@pytest.fixture
-def sample_mode_config():
+@pytest.fixture(name="sample_mode_config")
+def fixture_sample_mode_config():
     """Sample mode configuration for testing."""
     return ModeConfig(
         version="v1.0.0",
@@ -76,8 +90,8 @@ def sample_mode_config():
     )
 
 
-@pytest.fixture
-def sample_system_config():
+@pytest.fixture(name="sample_system_config")
+def fixture_sample_system_config():
     """Sample system configuration for testing."""
     return ModeSystemConfig(
         version="v1.0.2",
@@ -95,8 +109,8 @@ def sample_system_config():
     )
 
 
-@pytest.fixture
-def sample_transition_rule():
+@pytest.fixture(name="sample_transition_rule")
+def fixture_sample_transition_rule():
     """Sample transition rule for testing."""
     return TransitionRule(
         from_mode="mode1",
@@ -259,52 +273,66 @@ class TestModeSystemConfig:
 class TestLoadModeComponents:
     """Test cases for _load_mode_components function."""
 
-    @patch("runtime.config.load_input")
-    @patch("runtime.config.load_simulator")
-    @patch("runtime.config.load_action")
-    @patch("runtime.config.load_background")
-    @patch("runtime.config.load_llm")
     def test_load_mode_components_complete(
         self,
-        mock_load_llm,
-        mock_load_background,
-        mock_load_action,
-        mock_load_simulator,
-        mock_load_input,
         sample_mode_config,
         sample_system_config,
-        mock_sensor,
-        mock_simulator,
-        mock_action,
-        mock_background,
-        mock_llm,
     ):
         """Test loading all component types."""
-        mock_load_input.return_value = mock_sensor
-        mock_load_simulator.return_value = mock_simulator
-        mock_load_action.return_value = mock_action
-        mock_load_background.return_value = mock_background
-        mock_load_llm.return_value = mock_llm
+        mock_sensor = Mock()
+        mock_simulator = Mock()
+        mock_action = Mock()
+        mock_background = Mock()
+        mock_llm = Mock()
 
-        sample_mode_config._raw_inputs = [{"type": "test_input", "config": {}}]
-        sample_mode_config._raw_simulators = [{"type": "test_simulator", "config": {}}]
-        sample_mode_config._raw_actions = [{"type": "test_action", "config": {}}]
-        sample_mode_config._raw_backgrounds = [
-            {"type": "test_background", "config": {}}
-        ]
-        sample_mode_config._raw_llm = {"type": "test_llm", "config": {}}
+        with (
+            patch("runtime.config.load_input") as mock_load_input,
+            patch("runtime.config.load_simulator") as mock_load_simulator,
+            patch("runtime.config.load_action") as mock_load_action,
+            patch("runtime.config.load_background") as mock_load_background,
+            patch("runtime.config.load_llm") as mock_load_llm,
+        ):
+            mock_load_input.return_value = mock_sensor
+            mock_load_simulator.return_value = mock_simulator
+            mock_load_action.return_value = mock_action
+            mock_load_background.return_value = mock_background
+            mock_load_llm.return_value = mock_llm
 
-        _load_mode_components(sample_mode_config, sample_system_config)
+            _set_raw_mode_field(
+                sample_mode_config,
+                "_raw_inputs",
+                [{"type": "test_input", "config": {}}],
+            )
+            _set_raw_mode_field(
+                sample_mode_config,
+                "_raw_simulators",
+                [{"type": "test_simulator", "config": {}}],
+            )
+            _set_raw_mode_field(
+                sample_mode_config,
+                "_raw_actions",
+                [{"type": "test_action", "config": {}}],
+            )
+            _set_raw_mode_field(
+                sample_mode_config,
+                "_raw_backgrounds",
+                [{"type": "test_background", "config": {}}],
+            )
+            _set_raw_mode_field(
+                sample_mode_config, "_raw_llm", {"type": "test_llm", "config": {}}
+            )
 
-        assert len(sample_mode_config.agent_inputs) == 1
-        assert sample_mode_config.agent_inputs[0] == mock_sensor
-        assert len(sample_mode_config.simulators) == 1
-        assert sample_mode_config.simulators[0] == mock_simulator
-        assert len(sample_mode_config.agent_actions) == 1
-        assert sample_mode_config.agent_actions[0] == mock_action
-        assert len(sample_mode_config.backgrounds) == 1
-        assert sample_mode_config.backgrounds[0] == mock_background
-        assert sample_mode_config.cortex_llm == mock_llm
+            _load_mode_components(sample_mode_config, sample_system_config)
+
+            assert len(sample_mode_config.agent_inputs) == 1
+            assert sample_mode_config.agent_inputs[0] == mock_sensor
+            assert len(sample_mode_config.simulators) == 1
+            assert sample_mode_config.simulators[0] == mock_simulator
+            assert len(sample_mode_config.agent_actions) == 1
+            assert sample_mode_config.agent_actions[0] == mock_action
+            assert len(sample_mode_config.backgrounds) == 1
+            assert sample_mode_config.backgrounds[0] == mock_background
+            assert sample_mode_config.cortex_llm == mock_llm
 
     @patch("runtime.config.load_llm")
     def test_load_mode_components_with_global_llm(
@@ -317,7 +345,7 @@ class TestLoadModeComponents:
         """Test loading components with global LLM configuration."""
         mock_load_llm.return_value = mock_llm
 
-        sample_mode_config._raw_llm = None
+        _set_raw_mode_field(sample_mode_config, "_raw_llm", None)
         sample_system_config.global_cortex_llm = {"type": "global_llm", "config": {}}
 
         _load_mode_components(sample_mode_config, sample_system_config)
@@ -331,7 +359,7 @@ class TestLoadModeComponents:
         sample_system_config,
     ):
         """Test that missing LLM configuration raises ValueError."""
-        sample_mode_config._raw_llm = None
+        _set_raw_mode_field(sample_mode_config, "_raw_llm", None)
         sample_system_config.global_cortex_llm = None
 
         with pytest.raises(
@@ -373,8 +401,6 @@ class TestLoadModeConfig:
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json5", delete=False) as f:
-            import json5
-
             json5.dump(config_data, f)
             temp_file = f.name
 
@@ -414,8 +440,6 @@ class TestLoadModeConfig:
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json5", delete=False) as f:
-            import json5
-
             json5.dump(config_data, f)
             temp_file = f.name
 
@@ -428,6 +452,48 @@ class TestLoadModeConfig:
                 assert config.unitree_ethernet == "eth0"
                 mock_load_unitree.assert_called_once_with("eth0")
 
+        finally:
+            os.unlink(temp_file)
+
+    @patch("runtime.config.load_unitree")
+    def test_load_mode_config_unitree_init_failure(self, mock_load_unitree):
+        """Test that Unitree init failures surface during config load."""
+        mock_load_unitree.side_effect = RuntimeError("low-level init failure")
+        config_data = {
+            "version": "v1.0.2",
+            "unitree_ethernet": "eth0",
+            "default_mode": "default",
+            "api_key": "openmind_free",
+            "system_governance": "Env governance",
+            "modes": {
+                "default": {
+                    "hertz": 1.0,
+                    "display_name": "Default",
+                    "description": "Default mode",
+                    "system_prompt_base": "Test prompt",
+                    "agent_inputs": [],
+                    "agent_actions": [],
+                }
+            },
+            "cortex_llm": {"type": "test_llm"},
+        }
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json5", delete=False) as f:
+            json5.dump(config_data, f)
+            temp_file = f.name
+
+        try:
+            with patch("runtime.config.os.path.join") as mock_join:
+                mock_join.return_value = temp_file
+                expected_message = (
+                    "Unitree initialization failed while loading config "
+                    "'unitree_fail_test' with unitree_ethernet 'eth0'"
+                )
+                with pytest.raises(RuntimeError, match=expected_message) as exc_info:
+                    load_mode_config("unitree_fail_test")
+
+                assert isinstance(exc_info.value.__cause__, RuntimeError)
+                assert str(exc_info.value.__cause__) == "low-level init failure"
         finally:
             os.unlink(temp_file)
 
@@ -450,8 +516,6 @@ class TestLoadModeConfig:
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json5", delete=False) as f:
-            import json5
-
             json5.dump(config_data, f)
             temp_file = f.name
 
@@ -538,13 +602,13 @@ class TestSchemaLoading:
 
     @patch("builtins.open", mock_open(read_data='{"type": "object", "properties": {}}'))
     @patch("pathlib.Path.exists", return_value=True)
-    def test_load_schema_with_mock_file(self, mock_exists):
+    def test_load_schema_with_mock_file(self, _mock_exists):
         """Test schema loading with mocked file."""
         schema = _load_schema("test_schema.json")
         assert schema == {"type": "object", "properties": {}}
 
     @patch("pathlib.Path.exists", return_value=False)
-    def test_load_schema_path_does_not_exist(self, mock_exists):
+    def test_load_schema_path_does_not_exist(self, _mock_exists):
         """Test that FileNotFoundError is raised when path doesn't exist."""
         with pytest.raises(FileNotFoundError):
             _load_schema("missing_schema.json")
@@ -609,7 +673,9 @@ class TestValidateConfigSchema:
         mock_load.assert_called_once_with("single_mode_schema.json")
 
     def test_validate_config_selects_multi_mode_schema(self):
-        """Test that multi-mode schema is selected when 'modes' and 'default_mode' keys are present."""
+        """
+        Test that multi-mode schema is selected for mode-aware configurations.
+        """
         config = {
             "name": "test_multi_mode",
             "version": "v1.0.0",

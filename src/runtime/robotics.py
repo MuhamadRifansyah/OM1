@@ -1,3 +1,6 @@
+"""Runtime helpers for robotics channel initialization."""
+
+import importlib
 import logging
 
 
@@ -20,20 +23,29 @@ def load_unitree(unitree_ethernet: str):
 
     Raises
     ------
-    Exception
+    RuntimeError
         If initialization of the Unitree Ethernet channel fails.
 
     """
     if unitree_ethernet is not None:
         logging.info(
-            f"Using {unitree_ethernet} as the Unitree Network Ethernet Adapter"
+            "Using %s as the Unitree Network Ethernet Adapter", unitree_ethernet
         )
 
-        from unitree.unitree_sdk2py.core.channel import ChannelFactoryInitialize
-
         try:
-            ChannelFactoryInitialize(0, unitree_ethernet)
-        except Exception as e:
-            logging.error(f"Failed to initialize Unitree Ethernet channel: {e}")
-            # raise e
+            channel_module = importlib.import_module(
+                "unitree.unitree_sdk2py.core.channel"
+            )
+            channel_factory_initialize = getattr(
+                channel_module, "ChannelFactoryInitialize"
+            )
+            channel_factory_initialize(0, unitree_ethernet)
+        except Exception as exc:
+            logging.exception(
+                "Failed to initialize Unitree Ethernet channel for adapter '%s'",
+                unitree_ethernet,
+            )
+            raise RuntimeError(
+                f"Failed to initialize Unitree Ethernet channel '{unitree_ethernet}'"
+            ) from exc
         logging.info("Booting Unitree and CycloneDDS")

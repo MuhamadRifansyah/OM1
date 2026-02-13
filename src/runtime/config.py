@@ -1,3 +1,7 @@
+"""Mode-runtime configuration models, loaders, and serialization helpers."""
+
+import importlib
+import importlib.util
 import json
 import logging
 import os
@@ -6,7 +10,6 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import json5
 from jsonschema import ValidationError, validate
 
 from actions import load_action
@@ -27,6 +30,8 @@ from runtime.robotics import load_unitree
 from runtime.version import verify_runtime_version
 from simulators import load_simulator
 from simulators.base import Simulator
+
+json5 = importlib.import_module("json5") if importlib.util.find_spec("json5") else json
 
 
 def _load_schema(schema_file: str) -> dict:
@@ -55,7 +60,7 @@ def _load_schema(schema_file: str) -> dict:
             f"Schema file not found: {schema_path}. Cannot validate configuration."
         )
 
-    with open(schema_path, "r") as f:
+    with open(schema_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -83,7 +88,11 @@ def validate_config_schema(raw_config: dict) -> None:
         raise
     except ValidationError as e:
         field_path = ".".join(str(p) for p in e.path) if e.path else "root"
-        logging.error(f"Schema validation failed at field '{field_path}': {e.message}")
+        logging.error(
+            "Schema validation failed at field '%s': %s",
+            field_path,
+            e.message,
+        )
         raise
 
 
@@ -127,7 +136,8 @@ class RuntimeConfig:
     unitree_ethernet : Optional[str]
         Optional Unitree ethernet port.
     action_execution_mode : Optional[str]
-        Optional action execution mode (e.g., "concurrent", "sequential", "dependencies"). Defaults to "concurrent".
+        Optional action execution mode (for example, "concurrent", "sequential",
+        or "dependencies"). Defaults to "concurrent".
     action_dependencies : Optional[Dict[str, List[str]]]
         Optional mapping of action dependencies.
     """
@@ -154,14 +164,21 @@ class RuntimeConfig:
     action_dependencies: Optional[Dict[str, List[str]]] = None
 
 
+@dataclass(frozen=True)
+class _MetaDefaults:
+    """Metadata defaults injected into component config payloads."""
+
+    api_key: Optional[str]
+    unitree_ethernet: Optional[str]
+    urid: Optional[str]
+    robot_ip: Optional[str]
+    mode: Optional[str] = None
+
+
 def add_meta(
     config: Dict,
-    g_api_key: Optional[str],
-    g_ut_eth: Optional[str],
-    g_URID: Optional[str],
-    g_robot_ip: Optional[str],
-    g_mode: Optional[str] = None,
-) -> dict[str, str]:
+    defaults: _MetaDefaults,
+) -> dict[str, Any]:
     """
     Add an API key and Robot configuration to a runtime configuration.
 
@@ -169,16 +186,8 @@ def add_meta(
     ----------
     config : dict
         The runtime configuration to update.
-    g_api_key : str
-        The API key to add.
-    g_ut_eth : str
-        The Robot ethernet port to add.
-    g_URID : str
-        The Robot URID to use.
-    g_robot_ip : Optional[str]
-        The Robot IP address.
-    g_mode : Optional[str]
-        The mode of operation.
+    defaults : _MetaDefaults
+        Default metadata values to inject when missing.
 
     Returns
     -------
@@ -186,16 +195,16 @@ def add_meta(
         The updated runtime configuration.
     """
     # logging.info(f"config before {config}")
-    if "api_key" not in config and g_api_key is not None:
-        config["api_key"] = g_api_key
-    if "unitree_ethernet" not in config and g_ut_eth is not None:
-        config["unitree_ethernet"] = g_ut_eth
-    if "URID" not in config and g_URID is not None:
-        config["URID"] = g_URID
-    if "robot_ip" not in config and g_robot_ip is not None:
-        config["robot_ip"] = g_robot_ip
-    if "mode" not in config and g_mode is not None:
-        config["mode"] = g_mode
+    if "api_key" not in config and defaults.api_key is not None:
+        config["api_key"] = defaults.api_key
+    if "unitree_ethernet" not in config and defaults.unitree_ethernet is not None:
+        config["unitree_ethernet"] = defaults.unitree_ethernet
+    if "URID" not in config and defaults.urid is not None:
+        config["URID"] = defaults.urid
+    if "robot_ip" not in config and defaults.robot_ip is not None:
+        config["robot_ip"] = defaults.robot_ip
+    if "mode" not in config and defaults.mode is not None:
+        config["mode"] = defaults.mode
     return config
 
 
@@ -231,11 +240,13 @@ class TransitionRule:
     trigger_keywords : List[str], optional
         Keywords or phrases that can trigger the transition (for input-triggered).
     priority : int, optional
-        Priority of the rule when multiple rules could apply. Higher numbers = higher priority. Defaults to 1.
+        Priority of the rule when multiple rules could apply.
+        Higher numbers = higher priority. Defaults to 1.
     cooldown_seconds : float, optional
         Minimum time in seconds before this rule can trigger again. Defaults to 0.0.
     timeout_seconds : Optional[float], optional
-        For time-based transitions, the time in seconds after which to switch modes. Defaults to None.
+        For time-based transitions, the time in seconds after which to switch
+        modes. Defaults to None.
     context_conditions : Dict, optional
         Conditions based on context that must be met for the transition. Defaults to empty dict.
     """
@@ -288,7 +299,8 @@ class ModeConfig:
     backgrounds : List[Background], optional
         List of background processes for the mode. Defaults to empty list.
     action_execution_mode : Optional[str], optional
-        Execution mode for actions (e.g., "concurrent", "sequential", "dependencies"). Defaults to concurrent.
+        Execution mode for actions (for example, "concurrent", "sequential",
+        or "dependencies"). Defaults to concurrent.
     action_dependencies : Optional[Dict[str, List[str]]], optional
         Dependencies between actions for execution order. Defaults to None.
     _raw_inputs : List[Dict], optional
@@ -383,9 +395,9 @@ class ModeConfig:
         system_config : ModeSystemConfig
             The global system configuration containing shared settings
         """
-        logging.info(f"Loading components for mode: {self.name}")
+        logging.info("Loading components for mode: %s", self.name)
         _load_mode_components(self, system_config)
-        logging.info(f"Components loaded successfully for mode: {self.name}")
+        logging.info("Components loaded successfully for mode: %s", self.name)
 
     async def execute_lifecycle_hooks(
         self, hook_type: LifecycleHookType, context: Optional[Dict[str, Any]] = None
@@ -540,7 +552,7 @@ def load_mode_config(
         else mode_source_path
     )
 
-    with open(config_path, "r") as f:
+    with open(config_path, "r", encoding="utf-8") as f:
         try:
             raw_config = json5.load(f)
         except Exception as e:
@@ -569,17 +581,23 @@ def load_mode_config(
             g_api_key = backup_key
             logging.info("Found OM_API_KEY in .env file.")
 
-    g_URID = raw_config.get("URID", "default")
-    if g_URID == "default":
-        backup_URID = os.environ.get("URID")
-        if backup_URID:
-            g_URID = backup_URID
+    g_urid = raw_config.get("URID", "default")
+    if g_urid == "default":
+        backup_urid = os.environ.get("URID")
+        if backup_urid:
+            g_urid = backup_urid
 
     g_ut_eth = raw_config.get("unitree_ethernet", None)
     if g_ut_eth is None or g_ut_eth == "":
         logging.info("No robot hardware ethernet port provided.")
     else:
-        load_unitree(g_ut_eth)
+        try:
+            load_unitree(g_ut_eth)
+        except RuntimeError as exc:
+            raise RuntimeError(
+                f"Unitree initialization failed while loading config "
+                f"'{config_name}' with unitree_ethernet '{g_ut_eth}'"
+            ) from exc
 
     mode_system_config = ModeSystemConfig(
         version=config_version,
@@ -590,7 +608,7 @@ def load_mode_config(
         mode_memory_enabled=raw_config.get("mode_memory_enabled", True),
         api_key=g_api_key,
         robot_ip=g_robot_ip,
-        URID=g_URID,
+        URID=g_urid,
         unitree_ethernet=g_ut_eth,
         system_governance=raw_config.get("system_governance", ""),
         system_prompt_examples=raw_config.get("system_prompt_examples", ""),
@@ -643,6 +661,32 @@ def load_mode_config(
     return mode_system_config
 
 
+def _get_mode_raw_list(mode_config: ModeConfig, attr_name: str) -> List[Dict]:
+    """
+    Read a raw mode list field defensively through ``getattr``.
+
+    Returns an empty list if the attribute is missing or not a list.
+    """
+    raw_value = getattr(mode_config, attr_name, [])
+    return raw_value if isinstance(raw_value, list) else []
+
+
+def _get_mode_raw_dict(mode_config: ModeConfig, attr_name: str) -> Optional[Dict]:
+    """
+    Read a raw mode mapping field defensively through ``getattr``.
+
+    Returns None if the attribute is missing or not a dict.
+    """
+    raw_value = getattr(mode_config, attr_name, None)
+    return raw_value if isinstance(raw_value, dict) else None
+
+
+def _get_system_raw_global_lifecycle_hooks(config: ModeSystemConfig) -> List[Dict]:
+    """Read global lifecycle-hook payloads without direct protected access."""
+    raw_hooks = getattr(config, "_raw_global_lifecycle_hooks", [])
+    return raw_hooks if isinstance(raw_hooks, list) else []
+
+
 def _load_mode_components(mode_config: ModeConfig, system_config: ModeSystemConfig):
     """
     Load the actual component instances for a mode.
@@ -656,9 +700,21 @@ def _load_mode_components(mode_config: ModeConfig, system_config: ModeSystemConf
     """
     g_api_key = system_config.api_key
     g_ut_eth = system_config.unitree_ethernet
-    g_URID = system_config.URID
+    g_urid = system_config.URID
     g_robot_ip = system_config.robot_ip
     g_mode = mode_config.name
+    meta_defaults = _MetaDefaults(
+        api_key=g_api_key,
+        unitree_ethernet=g_ut_eth,
+        urid=g_urid,
+        robot_ip=g_robot_ip,
+        mode=g_mode,
+    )
+    raw_inputs = _get_mode_raw_list(mode_config, "_raw_inputs")
+    raw_simulators = _get_mode_raw_list(mode_config, "_raw_simulators")
+    raw_actions = _get_mode_raw_list(mode_config, "_raw_actions")
+    raw_backgrounds = _get_mode_raw_list(mode_config, "_raw_backgrounds")
+    raw_llm = _get_mode_raw_dict(mode_config, "_raw_llm")
 
     # Load inputs
     mode_config.agent_inputs = [
@@ -667,15 +723,11 @@ def _load_mode_components(mode_config: ModeConfig, system_config: ModeSystemConf
                 **inp,
                 "config": add_meta(
                     inp.get("config", {}),
-                    g_api_key,
-                    g_ut_eth,
-                    g_URID,
-                    g_robot_ip,
-                    g_mode,
+                    meta_defaults,
                 ),
             }
         )
-        for inp in mode_config._raw_inputs
+        for inp in raw_inputs
     ]
 
     # Load simulators
@@ -685,15 +737,11 @@ def _load_mode_components(mode_config: ModeConfig, system_config: ModeSystemConf
                 **sim,
                 "config": add_meta(
                     sim.get("config", {}),
-                    g_api_key,
-                    g_ut_eth,
-                    g_URID,
-                    g_robot_ip,
-                    g_mode,
+                    meta_defaults,
                 ),
             }
         )
-        for sim in mode_config._raw_simulators
+        for sim in raw_simulators
     ]
 
     # Load actions
@@ -703,15 +751,11 @@ def _load_mode_components(mode_config: ModeConfig, system_config: ModeSystemConf
                 **action,
                 "config": add_meta(
                     action.get("config", {}),
-                    g_api_key,
-                    g_ut_eth,
-                    g_URID,
-                    g_robot_ip,
-                    g_mode,
+                    meta_defaults,
                 ),
             }
         )
-        for action in mode_config._raw_actions
+        for action in raw_actions
     ]
 
     # Load backgrounds
@@ -721,30 +765,22 @@ def _load_mode_components(mode_config: ModeConfig, system_config: ModeSystemConf
                 **bg,
                 "config": add_meta(
                     bg.get("config", {}),
-                    g_api_key,
-                    g_ut_eth,
-                    g_URID,
-                    g_robot_ip,
-                    g_mode,
+                    meta_defaults,
                 ),
             }
         )
-        for bg in mode_config._raw_backgrounds
+        for bg in raw_backgrounds
     ]
 
     # Load LLM
-    llm_config = mode_config._raw_llm or system_config.global_cortex_llm
+    llm_config = raw_llm or system_config.global_cortex_llm
     if llm_config:
         mode_config.cortex_llm = load_llm(
             {
                 **llm_config,
                 "config": add_meta(
                     llm_config.get("config", {}),
-                    g_api_key,
-                    g_ut_eth,
-                    g_URID,
-                    g_robot_ip,
-                    g_mode,
+                    meta_defaults,
                 ),
             },
             available_actions=mode_config.agent_actions,
@@ -779,12 +815,14 @@ def mode_config_to_dict(config: ModeSystemConfig) -> Dict[str, Any]:
                 "timeout_seconds": mode_config.timeout_seconds,
                 "remember_locations": mode_config.remember_locations,
                 "save_interactions": mode_config.save_interactions,
-                "agent_inputs": mode_config._raw_inputs,
-                "cortex_llm": mode_config._raw_llm,
-                "simulators": mode_config._raw_simulators,
-                "agent_actions": mode_config._raw_actions,
-                "backgrounds": mode_config._raw_backgrounds,
-                "lifecycle_hooks": mode_config._raw_lifecycle_hooks,
+                "agent_inputs": _get_mode_raw_list(mode_config, "_raw_inputs"),
+                "cortex_llm": _get_mode_raw_dict(mode_config, "_raw_llm"),
+                "simulators": _get_mode_raw_list(mode_config, "_raw_simulators"),
+                "agent_actions": _get_mode_raw_list(mode_config, "_raw_actions"),
+                "backgrounds": _get_mode_raw_list(mode_config, "_raw_backgrounds"),
+                "lifecycle_hooks": _get_mode_raw_list(
+                    mode_config, "_raw_lifecycle_hooks"
+                ),
             }
 
         transition_rules = []
@@ -815,11 +853,11 @@ def mode_config_to_dict(config: ModeSystemConfig) -> Dict[str, Any]:
             "system_governance": config.system_governance,
             "system_prompt_examples": config.system_prompt_examples,
             "cortex_llm": config.global_cortex_llm,
-            "global_lifecycle_hooks": config._raw_global_lifecycle_hooks,
+            "global_lifecycle_hooks": _get_system_raw_global_lifecycle_hooks(config),
             "modes": modes_dict,
             "transition_rules": transition_rules,
         }
 
-    except Exception as e:
-        logging.error(f"Error converting config to dict: {e}")
+    except (AttributeError, KeyError, TypeError, ValueError) as e:
+        logging.error("Error converting config to dict: %s", e)
         return {}
