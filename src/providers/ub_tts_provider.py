@@ -8,6 +8,15 @@ import requests
 class UbTtsProvider:
     """
     Provider for the Ubtech Text-to-Speech (TTS) service.
+
+    Parameters
+    ----------
+    tts_url : str
+        The URL of the Ubtech TTS service.
+    executor : ThreadPoolExecutor
+        Executor for async TTS processing.
+    headers : dict
+        HTTP headers for requests.
     """
 
     def __init__(self, url: str):
