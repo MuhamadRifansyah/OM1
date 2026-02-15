@@ -1,3 +1,6 @@
+"""Unit tests for teleops status provider models and lifecycle behavior."""
+
+import logging
 from unittest.mock import patch
 
 import pytest
@@ -15,16 +18,16 @@ from providers.teleops_status_provider import (
 @pytest.fixture(autouse=True)
 def reset_singleton():
     """Reset singleton instances between tests."""
-    TeleopsStatusProvider.reset()  # type: ignore
+    singleton_class = getattr(TeleopsStatusProvider, "_singleton_class", None)
+    if singleton_class is not None:
+        setattr(singleton_class, "_singleton_instance", None)
     yield
 
-    try:
-        provider = TeleopsStatusProvider()
-        provider.stop()
-    except Exception:
-        pass
+    provider = TeleopsStatusProvider()
+    provider.stop()
 
-    TeleopsStatusProvider.reset()  # type: ignore
+    if singleton_class is not None:
+        setattr(singleton_class, "_singleton_instance", None)
 
 
 def test_battery_status_creation():
@@ -242,17 +245,7 @@ def test_teleops_status_from_dict():
     assert status.action_status.action == ActionType.TELEOPS
 
 
-@pytest.fixture
-def mock_teleops_dependencies():
-    """Mock dependencies for TeleopsStatusProvider."""
-    with (
-        patch("providers.teleops_status_provider.requests.get") as mock_get,
-        patch("providers.teleops_status_provider.requests.post") as mock_post,
-    ):
-        yield mock_get, mock_post
-
-
-def test_teleops_status_provider_initialization(mock_teleops_dependencies):
+def test_teleops_status_provider_initialization():
     """Test TeleopsStatusProvider initialization."""
     provider = TeleopsStatusProvider(api_key="test_api_key_1234567890123456789")
 
@@ -261,7 +254,7 @@ def test_teleops_status_provider_initialization(mock_teleops_dependencies):
     assert provider.executor is not None
 
 
-def test_teleops_status_provider_singleton(mock_teleops_dependencies):
+def test_teleops_status_provider_singleton():
     """Test that TeleopsStatusProvider follows singleton pattern."""
     provider1 = TeleopsStatusProvider(api_key="key1")
     provider2 = TeleopsStatusProvider(api_key="key2")
@@ -274,3 +267,43 @@ def test_teleops_status_provider_initialization_failure():
 
     assert provider.api_key is None
     assert provider.base_url == "https://api.openmind.org/api/core/teleops/status"
+
+
+def _build_status() -> TeleopsStatus:
+    """Build a minimal valid TeleopsStatus for provider tests."""
+    return TeleopsStatus(
+        update_time="2024-01-01T00:00:00",
+        battery_status=BatteryStatus(
+            battery_level=80.0,
+            temperature=25.0,
+            voltage=12.0,
+            timestamp="2024-01-01T00:00:00",
+        ),
+    )
+
+
+def test_share_status_after_stop_logs_lifecycle_warning(caplog):
+    """Test share_status logs clear lifecycle warning after stop."""
+    provider = TeleopsStatusProvider(api_key="test_api_key_1234567890123456789")
+    provider.stop()
+
+    with caplog.at_level(logging.WARNING):
+        provider.share_status(_build_status())
+
+    assert "TeleopsStatusProvider is stopped" in caplog.text
+
+
+def test_share_status_handles_executor_runtimeerror(caplog):
+    """Test share_status handles executor RuntimeError with clear diagnostics."""
+    provider = TeleopsStatusProvider(api_key="test_api_key_1234567890123456789")
+
+    with patch.object(
+        provider.executor,
+        "submit",
+        side_effect=RuntimeError("cannot schedule new futures after shutdown"),
+    ):
+        with caplog.at_level(logging.WARNING):
+            provider.share_status(_build_status())
+
+    assert "executor rejected share_status" in caplog.text
+    assert "cannot schedule new futures after shutdown" in caplog.text

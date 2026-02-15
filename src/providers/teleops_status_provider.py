@@ -1,3 +1,5 @@
+"""Teleoperation status models and provider."""
+
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -230,6 +232,7 @@ class TeleopsStatusProvider:
         self.api_key = api_key
         self.base_url = base_url
         self.executor = ThreadPoolExecutor(max_workers=1)
+        self._stopped = False
 
     def get_status(self) -> dict:
         """
@@ -248,12 +251,13 @@ class TeleopsStatusProvider:
             )
             if request.status_code == 200:
                 return request.json()
-            else:
-                logging.error(
-                    f"Failed to get status: {request.status_code} - {request.text}"
-                )
-        except requests.exceptions.RequestException as e:
-            logging.error(f"TeleopsStatusProvider: Error getting status: {e}")
+            logging.error(
+                "Failed to get status: %s - %s",
+                request.status_code,
+                request.text,
+            )
+        except requests.exceptions.RequestException as exc:
+            logging.error("TeleopsStatusProvider: Error getting status: %s", exc)
 
         return {}
 
@@ -280,13 +284,15 @@ class TeleopsStatusProvider:
             )
 
             if request.status_code == 200:
-                logging.debug(f"Status shared successfully: {request.json()}")
+                logging.debug("Status shared successfully: %s", request.json())
             else:
                 logging.error(
-                    f"Failed to share status: {request.status_code} - {request.text}"
+                    "Failed to share status: %s - %s",
+                    request.status_code,
+                    request.text,
                 )
-        except Exception as e:
-            logging.error(f"Error sharing status: {str(e)}")
+        except (requests.exceptions.RequestException, TypeError, ValueError) as exc:
+            logging.error("Error sharing status: %s", exc)
 
     def share_status(self, status: TeleopsStatus):
         """
@@ -299,10 +305,25 @@ class TeleopsStatusProvider:
         status : TeleopsStatus
             The status of the machine to be shared.
         """
-        self.executor.submit(self._share_status_worker, status)
+        if self._stopped:
+            logging.warning(
+                "TeleopsStatusProvider is stopped. Dropping status share request."
+            )
+            return
+
+        try:
+            self.executor.submit(self._share_status_worker, status)
+        except RuntimeError as exc:
+            logging.warning(
+                "TeleopsStatusProvider executor rejected share_status: %s",
+                exc,
+            )
 
     def stop(self):
         """
         Stop the TeleopsStatusProvider and clean up resources.
         """
+        if self._stopped:
+            return
+        self._stopped = True
         self.executor.shutdown(wait=True)
