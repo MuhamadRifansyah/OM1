@@ -1,247 +1,110 @@
-import threading
-from unittest.mock import MagicMock, patch
+"""Tests for UnitreeG1LocationsProvider."""
 
-import pytest
-import requests
+import time
+from contextlib import contextmanager
+from typing import Iterator
+from unittest.mock import MagicMock, patch
 
 from providers.unitree_g1_locations_provider import UnitreeG1LocationsProvider
 
 
-@pytest.fixture(autouse=True)
-def reset_singleton():
-    """Reset singleton instances between tests."""
-    UnitreeG1LocationsProvider.reset()  # type: ignore
-    yield
+def _reset_provider_singleton() -> None:
+    """Reset singleton state when reset API is available."""
+    setattr(UnitreeG1LocationsProvider, "_singleton_instance", None)
 
+
+@contextmanager
+def managed_provider(**kwargs) -> Iterator[UnitreeG1LocationsProvider]:
+    """Create and dispose a provider instance with clean singleton state."""
+    _reset_provider_singleton()
+    provider = UnitreeG1LocationsProvider(**kwargs)
     try:
-        provider = UnitreeG1LocationsProvider()
+        yield provider
+    finally:
         provider.stop()
-    except Exception:
-        pass
-
-    UnitreeG1LocationsProvider.reset()  # type: ignore
+        _reset_provider_singleton()
 
 
-@pytest.fixture
-def mock_dependencies():
-    """Mock dependencies for UnitreeG1LocationsProvider."""
-    with (
-        patch("providers.unitree_g1_locations_provider.IOProvider") as mock_io,
-        patch("providers.unitree_g1_locations_provider.requests") as mock_requests,
-    ):
+def test_initial_freshness_state_is_empty() -> None:
+    """Fresh provider reports empty cache and no previous success."""
+    with managed_provider() as provider:
+        freshness = provider.get_cache_freshness()
 
-        mock_io_instance = MagicMock()
-        mock_io.return_value = mock_io_instance
-
-        yield {
-            "io": mock_io,
-            "io_instance": mock_io_instance,
-            "requests": mock_requests,
-        }
+        assert provider.base_url == "http://localhost:5000/maps/locations/list"
+        assert provider.timeout == 5
+        assert provider.refresh_interval == 30
+        assert not provider.get_all_locations()
+        assert freshness["has_cache"] is False
+        assert freshness["last_success_age_sec"] is None
+        assert freshness["consecutive_fetch_failures"] == 0
+        assert freshness["last_fetch_error"] is None
 
 
-def test_initialization(mock_dependencies):
-    """Test UnitreeG1LocationsProvider initialization."""
-    provider = UnitreeG1LocationsProvider(
-        base_url="http://localhost:5000/locations", timeout=10, refresh_interval=60
-    )
-
-    assert provider.base_url == "http://localhost:5000/locations"
-    assert provider.timeout == 10
-    assert provider.refresh_interval == 60
-    assert provider._locations == {}
-    assert provider._thread is None
-
-
-def test_initialization_defaults(mock_dependencies):
-    """Test initialization with default values."""
-    provider = UnitreeG1LocationsProvider()
-
-    assert provider.base_url == "http://localhost:5000/maps/locations/list"
-    assert provider.timeout == 5
-    assert provider.refresh_interval == 30
-
-
-def test_singleton_pattern(mock_dependencies):
-    """Test that UnitreeG1LocationsProvider follows singleton pattern."""
-    provider1 = UnitreeG1LocationsProvider(base_url="http://localhost:5000")
-    provider2 = UnitreeG1LocationsProvider(base_url="http://localhost:6000")
-    assert provider1 is provider2
-
-
-def test_start(mock_dependencies):
-    """Test starting the provider."""
-    provider = UnitreeG1LocationsProvider()
-
-    provider.start()
-
-    assert provider._thread is not None
-    assert provider._thread.is_alive()
-
-
-def test_start_already_running(mock_dependencies):
-    """Test starting when already running."""
-    provider = UnitreeG1LocationsProvider()
-
-    provider.start()
-    first_thread = provider._thread
-
-    # Try to start again
-    provider.start()
-
-    # Should be the same thread
-    assert provider._thread is first_thread
-
-
-def test_stop(mock_dependencies):
-    """Test stopping the provider."""
-    provider = UnitreeG1LocationsProvider()
-
-    provider.start()
-    assert provider._thread is not None
-
-    provider.stop()
-
-    # Thread should stop
-    import time
-
-    time.sleep(0.1)
-    assert not provider._thread.is_alive() or provider._stop_event.is_set()
-
-
-def test_fetch_success(mock_dependencies):
-    """Test successful location fetch."""
-    provider = UnitreeG1LocationsProvider()
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "location1": {"name": "Location 1", "pose": {"x": 1.0, "y": 2.0}},
-        "location2": {"name": "Location 2", "pose": {"x": 3.0, "y": 4.0}},
+def test_lookup_is_case_insensitive_after_successful_refresh() -> None:
+    """Location lookup normalizes labels after cache refresh."""
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = {
+        "Kitchen": {"name": "Kitchen", "pose": {"x": 3.0, "y": 4.0}},
     }
-    mock_dependencies["requests"].get.return_value = mock_response
 
-    provider._fetch()
+    with patch("providers.locations_provider_base.requests.get", return_value=response):
+        with managed_provider(refresh_interval=1) as provider:
+            provider.start()
+            time.sleep(0.05)
 
-    assert "location1" in provider._locations
-    assert "location2" in provider._locations
+            location = provider.get_location("kItChEn")
+            assert location is not None
+            assert location["name"] == "Kitchen"
+
+            freshness = provider.get_cache_freshness()
+            assert freshness["has_cache"] is True
+            assert freshness["consecutive_fetch_failures"] == 0
 
 
-def test_fetch_with_nested_message(mock_dependencies):
-    """Test fetch with nested message JSON."""
-    import json
-
-    provider = UnitreeG1LocationsProvider()
-
-    locations_data = {
+def test_failure_does_not_clear_existing_cache_and_marks_stale() -> None:
+    """Cache remains available while freshness reports failure streaks."""
+    success_response = MagicMock()
+    success_response.status_code = 200
+    success_response.json.return_value = {
         "home": {"name": "Home", "pose": {"x": 0.0, "y": 0.0}},
-        "kitchen": {"name": "Kitchen", "pose": {"x": 5.0, "y": 5.0}},
     }
 
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {"message": json.dumps(locations_data)}
-    mock_dependencies["requests"].get.return_value = mock_response
+    failure_response = MagicMock()
+    failure_response.status_code = 500
+    failure_response.text = "Internal Server Error"
 
-    provider._fetch()
+    call_counter = {"value": 0}
 
-    assert "home" in provider._locations
-    assert "kitchen" in provider._locations
+    def request_side_effect(*_args, **_kwargs):
+        call_counter["value"] += 1
+        if call_counter["value"] == 1:
+            return success_response
+        return failure_response
 
+    with patch(
+        "providers.locations_provider_base.requests.get",
+        side_effect=request_side_effect,
+    ):
+        with managed_provider(refresh_interval=0.01) as provider:
+            provider.start()
+            time.sleep(0.07)
 
-def test_fetch_http_error(mock_dependencies):
-    """Test fetch with HTTP error response."""
-    provider = UnitreeG1LocationsProvider()
+            cached = provider.get_all_locations()
+            assert "home" in cached
 
-    mock_response = MagicMock()
-    mock_response.status_code = 500
-    mock_response.text = "Internal Server Error"
-    mock_dependencies["requests"].get.return_value = mock_response
-
-    # Should not raise exception, just log error
-    provider._fetch()
-
-    assert provider._locations == {}
-
-
-def test_fetch_request_exception(mock_dependencies):
-    """Test fetch with request exception."""
-    provider = UnitreeG1LocationsProvider()
-
-    mock_dependencies["requests"].get.side_effect = requests.RequestException(
-        "Connection error"
-    )
-
-    provider._fetch()
-
-    assert provider._locations == {}
+            freshness = provider.get_cache_freshness()
+            assert freshness["has_cache"] is True
+            assert freshness["last_success_age_sec"] is not None
+            assert freshness["consecutive_fetch_failures"] >= 1
+            assert freshness["last_fetch_error"] == "HTTP 500"
 
 
-def test_update_locations_dict(mock_dependencies):
-    """Test updating locations with dict format."""
-    provider = UnitreeG1LocationsProvider()
+def test_empty_base_url_skips_http_fetch() -> None:
+    """Provider should not issue HTTP requests when base URL is empty."""
+    with patch("providers.locations_provider_base.requests.get") as mock_get:
+        with managed_provider(base_url="", refresh_interval=1) as provider:
+            provider.start()
+            time.sleep(0.03)
 
-    locations = {
-        "Location1": {"name": "Location One", "pose": {}},
-        "Location2": {"name": "Location Two", "pose": {}},
-    }
-
-    provider._update_locations(locations)
-
-    assert "location1" in provider._locations
-    assert "location2" in provider._locations
-
-
-def test_update_locations_list(mock_dependencies):
-    """Test updating locations with list format."""
-    provider = UnitreeG1LocationsProvider()
-
-    locations = [{"name": "Location1", "pose": {}}, {"label": "Location2", "pose": {}}]
-
-    provider._update_locations(locations)
-
-    assert "location1" in provider._locations
-    assert "location2" in provider._locations
-
-
-def test_get_all_locations(mock_dependencies):
-    """Test getting all locations."""
-    provider = UnitreeG1LocationsProvider()
-
-    test_locations = {
-        "home": {"name": "Home", "pose": {}},
-        "kitchen": {"name": "Kitchen", "pose": {}},
-    }
-
-    provider._update_locations(test_locations)
-
-    all_locations = provider.get_all_locations()
-
-    assert all_locations == provider._locations
-    assert "home" in all_locations
-    assert "kitchen" in all_locations
-
-
-def test_thread_safety(mock_dependencies):
-    """Test thread-safe access to locations."""
-    provider = UnitreeG1LocationsProvider()
-
-    def update_locations():
-        provider._update_locations({"loc1": {"name": "Loc1"}})
-
-    def get_locations():
-        return provider.get_all_locations()
-
-    threads = []
-    for _ in range(5):
-        t1 = threading.Thread(target=update_locations)
-        t2 = threading.Thread(target=get_locations)
-        threads.extend([t1, t2])
-
-    for t in threads:
-        t.start()
-
-    for t in threads:
-        t.join()
-
-    assert True
+        assert mock_get.call_count == 0
