@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
+"""ROS 2 publisher provider for queued asynchronous string messages."""
+
+import importlib
 import logging
 import threading
 import time
 from queue import Empty, Queue
-from typing import Optional
+from typing import Any, Optional
 
-import rclpy  # type: ignore
-from rclpy.node import Node  # type: ignore
-from std_msgs.msg import String  # type: ignore
+rclpy: Any = importlib.import_module("rclpy")
+Node: Any = importlib.import_module("rclpy.node").Node
+String: Any = importlib.import_module("std_msgs.msg").String
 
 rclpy.init()
 
@@ -33,15 +36,15 @@ class ROS2PublisherProvider(Node):
         """
         try:
             super().__init__("ROS2_publisher_provider")
-        except Exception as e:
-            logging.error(f"Node initialization error: {e}")
+        except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+            logging.error("Node initialization error: %s", exc)
 
         # Initialize the publisher.
         try:
             self.publisher_ = self.create_publisher(String, topic, 10)
-            logging.info(f"Initialized ROS 2 publisher on topic '{topic}'")
-        except Exception as e:
-            logging.exception(f"Failed to create publisher on topic '{topic}': {e}")
+            logging.info("Initialized ROS 2 publisher on topic '%s'", topic)
+        except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+            logging.exception("Failed to create publisher on topic '%s': %s", topic, exc)
 
         # Pending message queue and threading constructs
         self._pending_messages = Queue()
@@ -61,26 +64,25 @@ class ROS2PublisherProvider(Node):
             msg = String()
             # Append a timestamp to the message text.
             msg.data = f"{text} - {time.time()}"
-            logging.info(f"Queueing message: {msg.data}")
+            logging.info("Queueing message: %s", msg.data)
             self._pending_messages.put(msg)
-        except Exception as e:
-            logging.exception(f"Error adding pending message: {e}")
+        except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+            logging.exception("Error adding pending message: %s", exc)
 
-    def _publish_message(self, msg: String):
+    def _publish_message(self, msg: Any):
         """
         Publish a single message and log the result.
 
         Parameters
         ----------
-        msg : String
+        msg : Any
             The ROS 2 String message to publish.
         """
         try:
             self.publisher_.publish(msg)
-            logging.info(f"Published message: {msg.data}")
-        except Exception as e:
-            logging.exception(f"Error publishing message: {e}")
-        return None
+            logging.info("Published message: %s", msg.data)
+        except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+            logging.exception("Error publishing message: %s", exc)
 
     def start(self):
         """
@@ -105,8 +107,8 @@ class ROS2PublisherProvider(Node):
                 self._publish_message(msg)
             except Empty:
                 continue
-            except Exception as e:
-                logging.exception("Exception in publisher thread: %s", e)
+            except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
+                logging.exception("Exception in publisher thread: %s", exc)
 
     def stop(self):
         """
@@ -117,6 +119,13 @@ class ROS2PublisherProvider(Node):
         if self._thread:
             self._thread.join(timeout=5)
 
-        self.publisher_.Close()
+        publisher = getattr(self, "publisher_", None)
+        close_method = getattr(publisher, "Close", None)
+        if callable(close_method):
+            close_method()
+        else:
+            logging.warning(
+                "Publisher does not implement Close(); skipping publisher cleanup."
+            )
 
         logging.info("ROS2 Publisher Provider stopped")
