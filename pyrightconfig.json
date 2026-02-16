@@ -7,6 +7,17 @@
     "**/ubtech"
   ],
   "typeCheckingMode": "standard",
-  "reportMissingImports": "warning",
-  "pythonVersion": "3.10"
+  "pythonVersion": "3.10",
+  "executionEnvironments": [
+    {
+      "root": "src",
+      "reportMissingImports": "warning",
+      "reportMissingModuleSource": "warning"
+    },
+    {
+      "root": "tests",
+      "reportMissingImports": "none",
+      "reportMissingModuleSource": "none"
+    }
+  ]
 }

@@ -1,0 +1,26 @@
+[MAIN]
+init-hook=import sys; from pathlib import Path; sys.path.append(str(Path(__file__).resolve().parent / "src"))
+
+[MESSAGES CONTROL]
+disable=
+    attribute-defined-outside-init,
+    assignment-from-none,
+    consider-using-with,
+    duplicate-code,
+    import-error,
+    import-outside-toplevel,
+    invalid-name,
+    line-too-long,
+    missing-class-docstring,
+    missing-function-docstring,
+    missing-module-docstring,
+    protected-access,
+    redefined-outer-name,
+    too-few-public-methods,
+    too-many-arguments,
+    too-many-positional-arguments,
+    unnecessary-lambda,
+    unspecified-encoding,
+    unused-argument,
+    unused-variable,
+    wrong-import-position
