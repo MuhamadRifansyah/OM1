@@ -2,7 +2,7 @@ import logging
 import math
 import random
 from queue import Queue
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from pydantic import Field
 
@@ -11,7 +11,14 @@ from actions.move_go2_autonomy.interface import MoveInput
 from providers.unitree_go2_odom_provider import RobotState, UnitreeGo2OdomProvider
 from providers.unitree_go2_rplidar_provider import UnitreeGo2RPLidarProvider
 from providers.unitree_go2_state_provider import UnitreeGo2StateProvider
-from unitree.unitree_sdk2py.go2.sport.sport_client import SportClient
+
+try:
+    from unitree.unitree_sdk2py.go2.sport.sport_client import SportClient
+except ImportError:
+    logging.warning(
+        "Unitree SDK or CycloneDDS not found. You do not need this unless you are connecting to a Unitree robot."
+    )
+    SportClient: Any = None
 
 
 class MoveUnitreeRPLidarSDKConfig(ActionConfig):
@@ -221,7 +228,6 @@ class MoveUnitreeRPLidarSDKConnector(
         target: List[MoveCommand] = list(self.pending_movements.queue)
 
         if len(target) > 0:
-
             current_target = target[0]
 
             logging.info(

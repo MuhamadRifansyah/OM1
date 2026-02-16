@@ -1,6 +1,6 @@
 import logging
 import threading
-from typing import Optional
+from typing import Any, Optional
 
 import zenoh
 from pydantic import Field
@@ -9,8 +9,15 @@ from actions.base import ActionConfig, ActionConnector
 from actions.move_game_controller.interface import IDLEInput
 from providers.unitree_go2_odom_provider import RobotState, UnitreeGo2OdomProvider
 from providers.unitree_go2_state_provider import UnitreeGo2StateProvider
-from unitree.unitree_sdk2py.go2.sport.sport_client import SportClient
 from zenoh_msgs import AudioStatus, open_zenoh_session
+
+try:
+    from unitree.unitree_sdk2py.go2.sport.sport_client import SportClient
+except ImportError:
+    logging.warning(
+        "Unitree SDK or CycloneDDS not found. You do not need this unless you are connecting to a Unitree robot."
+    )
+    SportClient: Any = None
 
 try:
     import hid
@@ -246,7 +253,6 @@ class Go2GameControllerConnector(ActionConnector[Go2GameControllerConfig, IDLEIn
             self.thread_lock.release()
 
     def _execute_sport_command_sync(self, command: str) -> None:
-
         logging.debug(f"_execute_sport_command_sync({command})")
 
         if self.sport_client is None:
@@ -380,7 +386,6 @@ class Go2GameControllerConnector(ActionConnector[Go2GameControllerConfig, IDLEIn
             return
 
         if data and len(data) > 0:
-
             logging.debug(f"Gamepad data: {data}")
 
             # deal with the different mappings
@@ -512,7 +517,6 @@ class Go2GameControllerConnector(ActionConnector[Go2GameControllerConfig, IDLEIn
             # logging.debug(f"Gamepad button value {button_value}")
 
             if self.button_previous == 0 and self.button_value > 0:
-
                 # logging.debug(f"Gamepad button pressed")
 
                 # We need this logic because when the user presses a button

@@ -1,8 +1,16 @@
 import logging
+from typing import Any
 
 from actions.arm_g1.interface import ArmInput
 from actions.base import ActionConfig, ActionConnector
-from unitree.unitree_sdk2py.g1.arm.g1_arm_action_client import G1ArmActionClient
+
+try:
+    from unitree.unitree_sdk2py.g1.arm.g1_arm_action_client import G1ArmActionClient
+except ImportError:
+    logging.warning(
+        "Unitree SDK or CycloneDDS not found. You do not need this unless you are connecting to a Unitree robot."
+    )
+    G1ArmActionClient: Any = None
 
 
 class ARMUnitreeSDKConnector(ActionConnector[ActionConfig, ArmInput]):

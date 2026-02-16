@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from types import SimpleNamespace
 from typing import List, Optional
 
 from pydantic import Field
@@ -32,6 +33,8 @@ except ImportError:
 
         def __init__(self):
             pass
+
+    dds_ = SimpleNamespace(BmsState_=BmsState_, LowState_=LowState_)
 
 
 # Data structure documentation:

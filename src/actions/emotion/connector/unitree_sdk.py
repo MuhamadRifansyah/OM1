@@ -1,10 +1,18 @@
 import logging
+from typing import Any
 
 from pydantic import Field
 
 from actions.base import ActionConfig, ActionConnector
 from actions.emotion.interface import EmotionInput
-from unitree.unitree_sdk2py.g1.audio.g1_audio_client import AudioClient
+
+try:
+    from unitree.unitree_sdk2py.g1.audio.g1_audio_client import AudioClient
+except ImportError:
+    logging.warning(
+        "Unitree SDK or CycloneDDS not found. You do not need this unless you are connecting to a Unitree robot."
+    )
+    AudioClient: Any = None
 
 
 class EmotionUnitreeConfig(ActionConfig):

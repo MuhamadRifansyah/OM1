@@ -2,7 +2,7 @@ import logging
 import math
 import random
 from queue import Queue
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import zenoh
 from pydantic import Field
@@ -13,7 +13,6 @@ from providers.face_presence_provider import FacePresenceProvider
 from providers.simple_paths_provider import SimplePathsProvider
 from providers.unitree_go2_odom_provider import RobotState, UnitreeGo2OdomProvider
 from providers.unitree_go2_state_provider import UnitreeGo2StateProvider
-from unitree.unitree_sdk2py.go2.sport.sport_client import SportClient
 from zenoh_msgs import (
     AIStatusRequest,
     AIStatusResponse,
@@ -21,6 +20,14 @@ from zenoh_msgs import (
     open_zenoh_session,
     prepare_header,
 )
+
+try:
+    from unitree.unitree_sdk2py.go2.sport.sport_client import SportClient
+except ImportError:
+    logging.warning(
+        "Unitree SDK or CycloneDDS not found. You do not need this unless you are connecting to a Unitree robot."
+    )
+    SportClient: Any = None
 
 
 class MoveUnitreeOMPathSDKConfig(ActionConfig):
@@ -107,11 +114,12 @@ class MoveUnitreeOMPathSDKConnector(
         self.pub = None
 
         try:
-            self.session = open_zenoh_session()
-            self.session.declare_subscriber(
+            session = open_zenoh_session()
+            self.session = session
+            session.declare_subscriber(
                 self.ai_status_request, self._zenoh_ai_status_request
             )
-            self._zenoh_ai_status_response_pub = self.session.declare_publisher(
+            self._zenoh_ai_status_response_pub = session.declare_publisher(
                 self.ai_status_response
             )
         except Exception as e:
@@ -276,7 +284,6 @@ class MoveUnitreeOMPathSDKConnector(
         target: List[MoveCommand] = list(self.pending_movements.queue)
 
         if len(target) > 0:
-
             current_target = target[0]
 
             logging.info(

@@ -1,7 +1,7 @@
 import logging
 import random
 from queue import Queue
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import Field
 
@@ -10,7 +10,14 @@ from actions.move_go2_action.interface import ActionInput
 from providers.unitree_go2_odom_provider import UnitreeGo2OdomProvider
 from providers.unitree_go2_rplidar_provider import UnitreeGo2RPLidarProvider
 from providers.unitree_go2_state_provider import UnitreeGo2StateProvider
-from unitree.unitree_sdk2py.go2.sport.sport_client import SportClient
+
+try:
+    from unitree.unitree_sdk2py.go2.sport.sport_client import SportClient
+except ImportError:
+    logging.warning(
+        "Unitree SDK or CycloneDDS not found. You do not need this unless you are connecting to a Unitree robot."
+    )
+    SportClient: Any = None
 
 
 class ActionUnitreeSDKConfig(ActionConfig):

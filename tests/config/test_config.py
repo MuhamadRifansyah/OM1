@@ -1,5 +1,6 @@
 import importlib
 import os
+import warnings
 from typing import Optional, Type
 
 import json5
@@ -67,9 +68,9 @@ def assert_action_classes_exist(action_config):
         f"actions.{action_config['name']}.interface"
     )
     interface = find_subclass_in_module(action_module, Interface)
-    assert (
-        interface is not None
-    ), f"No interface found for action {action_config['name']}"
+    assert interface is not None, (
+        f"No interface found for action {action_config['name']}"
+    )
 
     # Check connector exists
     try:
@@ -77,11 +78,33 @@ def assert_action_classes_exist(action_config):
             f"actions.{action_config['name']}.connector.{action_config['connector']}"
         )
         connector = find_subclass_in_module(connector_module, ActionConnector)
-        assert (
-            connector is not None
-        ), f"No connector found for action {action_config['name']}"
-    except (ImportError, ModuleNotFoundError):
-        assert False, f"Connector module not found for action {action_config['name']}"
+        assert connector is not None, (
+            f"No connector found for action {action_config['name']}"
+        )
+    except (ImportError, ModuleNotFoundError) as error:
+        if _is_optional_dependency_import_error(error):
+            warnings.warn(
+                f"Skipping optional connector import for action {action_config['name']}: {error}",
+                RuntimeWarning,
+            )
+            return
+        assert False, (
+            f"Connector module not found for action {action_config['name']}: {error}"
+        )
+
+
+def _is_optional_dependency_import_error(error: BaseException) -> bool:
+    """Return True if an import error is due to optional Unitree/CycloneDDS deps."""
+    missing_name = getattr(error, "name", "")
+    if isinstance(missing_name, str):
+        lowered = missing_name.lower()
+        if lowered == "unitree" or lowered.startswith("unitree."):
+            return True
+        if lowered == "cyclonedds" or lowered.startswith("cyclonedds."):
+            return True
+
+    message = str(error).lower()
+    return "unitree" in message or "cyclonedds" in message
 
 
 def find_subclass_in_module(module, parent_class: Type) -> Optional[Type]:

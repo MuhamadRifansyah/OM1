@@ -2,6 +2,7 @@ import json
 import logging
 import time
 from enum import Enum
+from typing import Any
 
 from om1_utils import ws
 from pydantic import Field
@@ -10,7 +11,14 @@ from actions.base import ActionConfig, ActionConnector
 from actions.move_go2_teleops.interface import MoveInput
 from providers import CommandStatus
 from providers.unitree_go2_state_provider import UnitreeGo2StateProvider
-from unitree.unitree_sdk2py.go2.sport.sport_client import SportClient
+
+try:
+    from unitree.unitree_sdk2py.go2.sport.sport_client import SportClient
+except ImportError:
+    logging.warning(
+        "Unitree SDK or CycloneDDS not found. You do not need this unless you are connecting to a Unitree robot."
+    )
+    SportClient: Any = None
 
 
 class RobotState(Enum):
