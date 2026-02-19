@@ -22,6 +22,10 @@ RUN apt-get update && apt-get install -y \
     curl \
     pkg-config \
     libssl-dev \
+    avahi-daemon \
+    avahi-utils \
+    libnss-mdns \
+    dbus \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
@@ -36,6 +40,10 @@ RUN printf '%s\n' \
   'pcm.!default { type pulse }' \
   'ctl.!default { type pulse }' \
   > /etc/asound.conf
+
+RUN if ! grep -q 'mdns4_minimal' /etc/nsswitch.conf; then \
+      sed -i 's/^\(hosts:[[:space:]]*files\)\(.*\)$/\1 mdns4_minimal [NOTFOUND=return]\2/' /etc/nsswitch.conf; \
+    fi
 
 WORKDIR /app
 RUN git clone --branch releases/0.10.x https://github.com/eclipse-cyclonedds/cyclonedds
@@ -78,6 +86,10 @@ RUN echo '#!/bin/bash' > /entrypoint.sh && \
     echo '  exit 1' >> /entrypoint.sh && \
     echo 'fi' >> /entrypoint.sh && \
     echo 'echo "Audio device default_output_aec is ready."' >> /entrypoint.sh && \
+    echo 'echo "Starting mDNS..."' >> /entrypoint.sh && \
+    echo 'mkdir -p /var/run/dbus && dbus-daemon --system --fork 2>/dev/null || true' >> /entrypoint.sh && \
+    echo 'avahi-daemon --daemonize --no-chroot 2>/dev/null || true' >> /entrypoint.sh && \
+    echo 'sleep 1' >> /entrypoint.sh && \
     echo 'echo "Starting main command..."' >> /entrypoint.sh && \
     echo 'if [ -n "${OM1_COMMAND}" ]; then' >> /entrypoint.sh && \
     echo '  exec python src/run.py "${OM1_COMMAND}"' >> /entrypoint.sh && \
