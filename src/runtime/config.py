@@ -6,7 +6,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import json5
+try:
+    import json5
+except ImportError:
+    json5 = None  # type: ignore
 from jsonschema import ValidationError, validate
 
 from actions import load_action
@@ -582,6 +585,8 @@ def load_mode_config(
 
     with open(config_path, "r") as f:
         try:
+            if json5 is None:
+                raise ImportError("json5 is required to load configuration files")
             raw_config = json5.load(f)
         except Exception as e:
             raise ValueError(
